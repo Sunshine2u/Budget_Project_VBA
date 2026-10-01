@@ -1,38 +1,44 @@
 Option Explicit
 
-' Define a Public Constant for the Log Sheet Name from the prototype
+' กำหนดค่าคงที่สาธารณะสำหรับชื่อชีท Log จากต้นแบบ
 Public Const LOG_SHEET_NAME As String = "Log"
+Public Const SHEET_PASSWORD As String = "MTIEPBCS"
 
 Sub genfile_ByReviewer_V11_WithLog()
 
-    ' --- [Index 1]: Variable Declarations ---
-    ' Declare variables for timing the execution
+    ' STREAMING_CHUNK:Declaring variables and initializing timing variables...
+    ' --- [ดัชนี 1]: การประกาศตัวแปร ---
+    ' ประกาศตัวแปรสำหรับการจับเวลาการทำงาน
     Dim StartTime As Double
     Dim endTime As Double
     Dim runTime As Double
 
-    ' Declare worksheet objects for easier reference
-    Dim wsMasterMapping As Worksheet        ' Worksheet object for "MasterMapping"
-    Dim wsTemp As Worksheet                 ' Temporary worksheet object for cleaning up default sheets
-    Dim wsNewWorkbookSheet As Worksheet     ' Worksheet object in the newly created workbook
-    Dim wsOriginalTemplate As Worksheet     ' Worksheet object for the original template sheet
-    Dim wsLog As Worksheet                  ' Worksheet object for logging
+    ' ประกาศวัตถุ Worksheet เพื่อให้อ้างอิงได้ง่ายขึ้น
+    Dim wsMasterMapping As Worksheet        ' วัตถุ Worksheet สำหรับ "MasterMapping"
+    Dim wsTemp As Worksheet                 ' วัตถุ Worksheet ชั่วคราวสำหรับลบชีทเริ่มต้น
+    Dim wsNewWorkbookSheet As Worksheet     ' วัตถุ Worksheet ในเวิร์กบุ๊กที่สร้างขึ้นใหม่
+    Dim wsOriginalTemplate As Worksheet     ' วัตถุ Worksheet สำหรับชีทเทมเพลตดั้งเดิม
+    Dim wsStandaloneSource As Worksheet     ' วัตถุ Worksheet ต้นทางสำหรับชีท (R)/(T) แบบ standalone
+    Dim wsLog As Worksheet                  ' วัตถุ Worksheet สำหรับบันทึก Log
+    Dim formulaErrorsCount As Long          ' ตัวนับสำหรับข้อผิดพลาดของสูตร
+    Dim standaloneSheetName As String
 
-    ' Declare variables to store data in arrays for faster processing
+    ' ประกาศตัวแปรสำหรับเก็บข้อมูลในอาร์เรย์เพื่อการประมวลผลที่เร็วขึ้น
     Dim arrMasterMapping As Variant
-    Dim arrMasterData As Variant            ' Array to store data from Master (M) sheets
-    Dim arrCurrentSheetFinalData As Variant ' Array to hold final data for the current sheet before writing
-    Dim arrTemplateFormulas As Variant      ' Array to hold formulas from the original template sheet
+    Dim arrMasterData As Variant            ' อาร์เรย์สำหรับเก็บข้อมูลจากชีท Master (M)
+    Dim arrCurrentSheetFinalData As Variant ' อาร์เรย์สำหรับเก็บข้อมูลสุดท้ายของชีทปัจจุบันก่อนทำการเขียนลงชีท
+    Dim arrTemplateFormulas As Variant      ' อาร์เรย์สำหรับเก็บสูตรจากชีทเทมเพลตดั้งเดิม
 
-    ' Declare Dictionary object for faster lookups of Master (M) data
+    ' STREAMING_CHUNK:Initializing dictionary objects...
+    ' ประกาศวัตถุ Dictionary สำหรับการค้นหาข้อมูล Master (M) ที่รวดเร็ว
     Dim dictAllMasterData As Object
     Set dictAllMasterData = CreateObject("Scripting.Dictionary")
 
-    ' Declare variables for storing sheet mappings and loop counters
+    ' ประกาศตัวแปรสำหรับเก็บการจับคู่ชีทและตัวนับรอบการวนลูป
     Dim dictSheetTemplates As Object
     Set dictSheetTemplates = CreateObject("Scripting.Dictionary")
 
-    ' Dictionary to group Profit Centers by Reviewer
+    ' Dictionary สำหรับจัดกลุ่ม Profit Center ตาม Reviewer
     Dim dictReviewerFiles As Object
     Set dictReviewerFiles = CreateObject("Scripting.Dictionary")
 
@@ -40,23 +46,25 @@ Sub genfile_ByReviewer_V11_WithLog()
     Dim dataRowCounter As Long
     Dim col As Long
 
-    ' Declare variables for file operations
+    ' ประกาศตัวแปรสำหรับการดำเนินการเกี่ยวกับไฟล์
     Dim newFilePath As String
     Dim folderPath As String
     Dim fileName As String
     Dim newWorkbook As Workbook
     Dim baseFileName As String
 
-    ' Variables for progress and time tracking on the UserForm
+    ' ตัวแปรสำหรับติดตามความคืบหน้าและเวลาบน UserForm
     Dim frmProgress As New frmProgress
     Dim totalFilesToProcess As Long
     Dim filesProcessed As Long
     Dim currentTime As Double
     Dim minutes As Long
     Dim seconds As Long
-    ' --- End [Index 1] ---
+    Dim currentReviewerName_str As Variant
+    ' --- สิ้นสุด [ดัชนี 1] ---
 
-    ' --- [Index 2]: Initialize FileSystemObject and Application Settings ---
+    ' STREAMING_CHUNK:Configuring system settings and preparing log sheet...
+    ' --- [ดัชนี 2]: เริ่มต้นการทำงานของ FileSystemObject และการตั้งค่า Application ---
     Dim fso As Object
     Set fso = CreateObject("Scripting.FileSystemObject")
 
@@ -67,66 +75,73 @@ Sub genfile_ByReviewer_V11_WithLog()
     Application.EnableEvents = False
     Application.DisplayAlerts = False
 
-    ' --- LOGGING: Start of Macro ---
+    ' --- บันทึก LOG: เริ่มต้นการทำงานของแมโคร ---
     Call WriteLog("INFO", "Macro started: genfile_ByReviewer_V10_WithLog")
 
-    ' --- Prepare Log Sheet ---
+    ' --- จัดเตรียมชีท Log ---
     On Error Resume Next
     Set wsLog = ThisWorkbook.Sheets(LOG_SHEET_NAME)
     On Error GoTo 0
 
     If Not wsLog Is Nothing Then
-        ' Check if there's data beyond headers before clearing
+        ' ตรวจสอบว่ามีข้อมูลต่อจากหัวข้อก่อนทำการล้างข้อมูลหรือไม่
         If wsLog.Cells(Rows.Count, "A").End(xlUp).Row > 1 Then
             wsLog.Range("A2:E" & wsLog.Cells(Rows.Count, "A").End(xlUp).Row).ClearContents
             Call WriteLog("INFO", "Cleared existing data in Log sheet.")
         End If
     End If
 
+    Dim wsActionPage As Worksheet
+    Dim sheetName As String
+
+    ' กำหนดค่า wsActionPage จากชีท "Action_Page"
+    Set wsActionPage = ThisWorkbook.Sheets("Action_Page")
+
+    ' ดึงชื่อชีทจาก Cell A6 ของ Action Page
+    sheetName = wsActionPage.Range("A6").Value
+
+    ' กำหนดค่า wsMasterMapping ตามชื่อชีทที่ระบุใน sheetName
+    Set wsMasterMapping = ThisWorkbook.Sheets(sheetName)
+    'Set wsMasterMapping = ThisWorkbook.Sheets("MasterMapping")
     
-            Dim wsActionPage As Worksheet
-            Dim sheetName As String
+    ' --- สิ้นสุด [ดัชนี 2] ---
 
-        ' ???????? wsActionPage ??????? "Action Page"
-            Set wsActionPage = ThisWorkbook.Sheets("Action_Page")
-
-        ' ????????????? Cell A6 ?????? Action Page
-        sheetName = wsActionPage.Range("A6").Value
-
-        ' ????? wsMasterMapping ???????????????????????????? sheetName
-        Set wsMasterMapping = ThisWorkbook.Sheets(sheetName)
-        'Set wsMasterMapping = ThisWorkbook.Sheets("MasterMapping")
-    
-    ' --- End [Index 2] ---
-
-    ' --- [Index 3]: Load MasterMapping Data ---
+    ' STREAMING_CHUNK:Loading MasterMapping data into memory...
+    ' --- [ดัชนี 3]: โหลดข้อมูล MasterMapping ---
     Dim lastRowMasterMapping As Long
     lastRowMasterMapping = wsMasterMapping.Cells(Rows.Count, "A").End(xlUp).Row
-    If lastRowMasterMapping < 5 Then ' Modified to check from row 5
+    If lastRowMasterMapping < 5 Then ' ปรับแก้ไขเพื่อตรวจสอบตั้งแต่วัดจากแถวที่ 5
         MsgBox "MasterMapping sheet is empty or has only headers.", vbExclamation
         Call WriteLog("WARNING", "MasterMapping sheet is empty or has only headers.", "lastRowMasterMapping", lastRowMasterMapping)
         GoTo CleanUp
     End If
     arrMasterMapping = wsMasterMapping.Range("A5:AR" & lastRowMasterMapping).Value
     Call WriteLog("INFO", "MasterMapping data loaded into array.", "Rows Loaded", UBound(arrMasterMapping, 1))
-    ' --- End [Index 3] ---
+    ' --- สิ้นสุด [ดัชนี 3] ---
 
-    ' --- [Index 4]: Identify Sheet Templates from MasterMapping ---
+    ' STREAMING_CHUNK:Identifying sheet templates from MasterMapping...
+    ' --- [ดัชนี 4]: ระบุเทมเพลตของชีทจาก MasterMapping ---
     Dim lastColSheets As Long
     Dim masterSourceSheetName As String
     Dim templateSheetName As String
     Dim createdSheetName As String
+    Dim reportSheetName As String
+    Dim hasStandaloneSheets As Boolean
 
     On Error Resume Next
-    lastColSheets = wsMasterMapping.Cells(2, Columns.Count).End(xlToLeft).Column
-    If lastColSheets < 4 Then lastColSheets = 3 ' Ensure at least column D (index 4 in 1-based) is considered for sheet mappings
+    lastColSheets = Application.Max( _
+        wsMasterMapping.Cells(2, wsMasterMapping.Columns.Count).End(xlToLeft).Column, _
+        wsMasterMapping.Cells(3, wsMasterMapping.Columns.Count).End(xlToLeft).Column, _
+        wsMasterMapping.Cells(4, wsMasterMapping.Columns.Count).End(xlToLeft).Column)
+    If lastColSheets < 4 Then lastColSheets = 3 ' ตรวจสอบให้แน่ใจว่าพิจารณาอย่างน้อยคอลัมน์ D (ดัชนี 4 ในฐาน 1) สำหรับการจับคู่ชีท
     On Error GoTo 0
 
     For j = 4 To lastColSheets
         masterSourceSheetName = Trim(CStr(wsMasterMapping.Cells(2, j).Value))
         templateSheetName = Trim(CStr(wsMasterMapping.Cells(3, j).Value))
+        reportSheetName = Trim(CStr(wsMasterMapping.Cells(4, j).Value))
 
-        If Len(masterSourceSheetName) > 0 And Len(templateSheetName) > 0 Then
+        If Len(masterSourceSheetName) > 0 Then
             createdSheetName = masterSourceSheetName
             If InStr(1, createdSheetName, " (M)", vbTextCompare) = 0 Then
                 createdSheetName = createdSheetName & " (M)"
@@ -134,21 +149,52 @@ Sub genfile_ByReviewer_V11_WithLog()
 
             If Len(createdSheetName) > 0 Then
                 If Not dictSheetTemplates.Exists(createdSheetName) Then
-                    dictSheetTemplates.Add createdSheetName, templateSheetName
+                    ' ใช้ชีท (M) เป็นแหล่งหลัก; ใช้ชีท (T) เฉพาะเมื่อไม่พบชีท (M)
+                    Dim targetTemplate As String
+                    targetTemplate = ""
+                    Set wsOriginalTemplate = Nothing
+                    On Error Resume Next
+                    Set wsOriginalTemplate = ThisWorkbook.Sheets(createdSheetName)
+                    On Error GoTo 0
+
+                    If Not wsOriginalTemplate Is Nothing Then
+                        targetTemplate = createdSheetName
+                        Call WriteLog("INFO", "Master sheet selected as output template and formula source.", "Master Sheet", createdSheetName)
+                    ElseIf Len(templateSheetName) > 0 Then
+                        On Error Resume Next
+                        Set wsOriginalTemplate = ThisWorkbook.Sheets(templateSheetName)
+                        On Error GoTo 0
+                        If Not wsOriginalTemplate Is Nothing Then
+                            targetTemplate = templateSheetName
+                            Call WriteLog("INFO", "Template sheet selected because the Master sheet was not found.", "Template Sheet", templateSheetName)
+                        End If
+                    End If
+
+                    ' คง fallback เดิมเมื่อไม่พบทั้งชีท (M) และ (T)
+                    If Len(targetTemplate) = 0 Then
+                        targetTemplate = createdSheetName
+                    End If
+                    Set wsOriginalTemplate = Nothing
+
+                    dictSheetTemplates.Add createdSheetName, targetTemplate
                 End If
             End If
+        ElseIf Len(templateSheetName) > 0 Or Len(reportSheetName) > 0 Then
+            hasStandaloneSheets = True
+            Call WriteLog("INFO", "Standalone (T)/(R) sheet mapping found.", "Template / Report", templateSheetName & " / " & reportSheetName)
         End If
     Next j
 
-    If dictSheetTemplates.Count = 0 Then
-        MsgBox "No valid sheet mappings found in MasterMapping (Row 2 & 3, Columns D-AR).", vbExclamation
+    If dictSheetTemplates.Count = 0 And Not hasStandaloneSheets Then
+        MsgBox "No valid (M), (T)-only, or (R)-only sheet mappings found in MasterMapping (Rows 2-4, Columns D-AR).", vbExclamation
         Call WriteLog("WARNING", "No valid sheet mappings found in MasterMapping.", "dictSheetTemplates.Count", dictSheetTemplates.Count)
         GoTo CleanUp
     End If
-    Call WriteLog("INFO", "Identified sheet templates and mappings.", "Total Mappings", dictSheetTemplates.Count)
-    ' --- End [Index 4] ---
+    Call WriteLog("INFO", "Identified sheet mappings.", "Master Mappings / Standalone Found", dictSheetTemplates.Count & " / " & hasStandaloneSheets)
+    ' --- สิ้นสุด [ดัชนี 4] ---
 
-    ' --- [Index 5]: Pre-populate Dictionary with Master (M) Data ---
+    ' STREAMING_CHUNK:Pre-populating dictionary with Master data...
+    ' --- [ดัชนี 5]: โหลดข้อมูล Master (M) เตรียมไว้ใน Dictionary ---
     Dim wsMasterSource As Worksheet
     Dim lastRowMasterSource As Long
     Dim lastColMasterSource As Long
@@ -166,7 +212,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                 arrMasterData = wsMasterSource.Range(wsMasterSource.Cells(2, "A"), wsMasterSource.Cells(lastRowMasterSource, lastColMasterSource)).Value
                 Set dictSingleMasterGrouped = CreateObject("Scripting.Dictionary")
                 For k = LBound(arrMasterData, 1) To UBound(arrMasterData, 1)
-                    masterKey = Trim(CStr(arrMasterData(k, 2))) ' Assuming Profit Center ID is in Column B of Master sheets
+                    masterKey = Trim(CStr(arrMasterData(k, 2))) ' สมมติว่า Profit Center ID อยู่ในคอลัมน์ B ของชีท Master
                     ReDim masterRowData_1D(1 To UBound(arrMasterData, 2))
                     For col = LBound(arrMasterData, 2) To UBound(arrMasterData, 2)
                         masterRowData_1D(col) = arrMasterData(k, col)
@@ -186,26 +232,30 @@ Sub genfile_ByReviewer_V11_WithLog()
 
     If Not IsEmpty(arrMasterData) Then Erase arrMasterData
 
-    If dictAllMasterData.Count = 0 Then
+    If dictAllMasterData.Count = 0 And Not hasStandaloneSheets Then
         MsgBox "No Master sheets with names containing ' (M)' and data found in this workbook.", vbExclamation
         Call WriteLog("ERROR", "No Master (M) sheets found or loaded with data.", "dictAllMasterData.Count", dictAllMasterData.Count)
         GoTo CleanUp
+    ElseIf dictAllMasterData.Count = 0 Then
+        Call WriteLog("INFO", "No Master (M) data found; continuing with standalone (T)/(R) sheets only.")
+    Else
+        Call WriteLog("INFO", "Successfully pre-populated dictionary with all Master (M) data.", "Total Master Sheets", dictAllMasterData.Count)
     End If
-    Call WriteLog("INFO", "Successfully pre-populated dictionary with all Master (M) data.", "Total Master Sheets", dictAllMasterData.Count)
-    ' --- End [Index 5] ---
+    ' --- สิ้นสุด [ดัชนี 5] ---
 
-    ' --- [Index 6]: Populate Reviewer Files Dictionary ---
+    ' STREAMING_CHUNK:Grouping profit centers by Reviewer...
+    ' --- [ดัชนี 6]: โหลดข้อมูลเข้าสู่ Dictionary สำหรับไฟล์ของ Reviewer ---
     Dim masterMappingRowData_1D As Variant
     Dim collProfitCentersForReviewer As Collection
 
     For i = 1 To UBound(arrMasterMapping, 1)
-        ' The column for Reviewer Name is AE (31st column in 1-based array).
-        ' The column for TRUE/FALSE checkbox is C (3rd column in 1-based array).
-        ' Check if column AE exists (which is 31st column)
+        ' คอลัมน์สำหรับชื่อ Reviewer คือ AE (คอลัมน์ที่ 31 ในอาร์เรย์ฐาน 1)
+        ' คอลัมน์สำหรับกล่องกาถูก TRUE/FALSE คือ C (คอลัมน์ที่ 3)
+        ' ตรวจสอบว่ามีคอลัมน์ AE อยู่หรือไม่ (คอลัมน์ที่ 31)
         If UBound(arrMasterMapping, 2) >= 31 Then
             Dim reviewerName As String
-            reviewerName = Trim(CStr(arrMasterMapping(i, 31))) ' Reviewer Name from Column AE
-            If arrMasterMapping(i, 3) = True And Len(reviewerName) > 0 Then ' Checkbox in Column C
+            reviewerName = Trim(CStr(arrMasterMapping(i, 31))) ' ชื่อ Reviewer จากคอลัมน์ AE
+            If arrMasterMapping(i, 3) = True And Len(reviewerName) > 0 Then ' กล่องกาถูกในคอลัมน์ C
                 If Not dictReviewerFiles.Exists(reviewerName) Then
                     Set collProfitCentersForReviewer = New Collection
                     dictReviewerFiles.Add reviewerName, collProfitCentersForReviewer
@@ -227,9 +277,10 @@ Sub genfile_ByReviewer_V11_WithLog()
         GoTo CleanUp
     End If
     Call WriteLog("INFO", "Grouped data by Reviewer.", "Total Reviewers", dictReviewerFiles.Count)
-    ' --- End [Index 6] ---
+    ' --- สิ้นสุด [ดัชนี 6] ---
 
-    ' --- [Index 7]: Initialize Progress Form ---
+    ' STREAMING_CHUNK:Displaying progress form...
+    ' --- [ดัชนี 7]: เริ่มต้นการทำงานของหน้าต่าง Progress ---
     totalFilesToProcess = dictReviewerFiles.Count
     With frmProgress
         .lblProgress.Caption = "Processing: 0 / " & totalFilesToProcess
@@ -238,73 +289,32 @@ Sub genfile_ByReviewer_V11_WithLog()
     End With
     filesProcessed = 0
     Call WriteLog("INFO", "Progress UserForm initialized and displayed.")
-    ' --- End [Index 7] ---
+    ' --- สิ้นสุด [ดัชนี 7] ---
 
-    ' --- [Index 8]: Main Loop for Generating Files by Reviewer ---
-    Dim currentReviewerName_str As Variant
-    For Each currentReviewerName_str In dictReviewerFiles.Keys
-
-        filesProcessed = filesProcessed + 1
-        Call WriteLog("INFO", "Starting file generation for Reviewer.", "Reviewer Name", currentReviewerName_str)
-
-        frmProgress.lblProgress.Caption = "Processing: " & filesProcessed & " / " & totalFilesToProcess & " (" & currentReviewerName_str & ")"
-        currentTime = Timer - StartTime
-        minutes = Int(currentTime / 60)
-        seconds = Int(currentTime Mod 60)
-        frmProgress.lblTime.Caption = "Time Elapsed: " & Format(minutes, "00") & ":" & Format(seconds, "00")
-        DoEvents
-
-        Set collProfitCentersForReviewer = dictReviewerFiles.item(currentReviewerName_str)
-        Set newWorkbook = Application.Workbooks.Add(xlWBATWorksheet)
-        
-        ' --- [Index 8.1.A]: Copy (R) Sheets as Values and Formats ---
-        ' This new block handles the copying of sheets marked with (R) in row 4 of MasterMapping.
-        Dim rSheetName As String
-        Dim wsSourceR As Worksheet
-        Dim wsCopiedR As Worksheet
-        
-        For j = 4 To lastColSheets
-            rSheetName = Trim(CStr(wsMasterMapping.Cells(4, j).Value))
-            
-            ' Check if the sheet name contains "(R)" and is not empty.
-            If InStr(1, rSheetName, "(R)", vbTextCompare) > 0 And Len(rSheetName) > 0 Then
-                
-                ' Check if the source sheet actually exists in the current workbook.
-                Set wsSourceR = Nothing
-                On Error Resume Next
-                Set wsSourceR = ThisWorkbook.Sheets(rSheetName)
-                On Error GoTo 0
-                
-                If Not wsSourceR Is Nothing Then
-                    ' Copy the entire sheet to the new workbook.
-                    wsSourceR.Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
-                    Set wsCopiedR = newWorkbook.Sheets(newWorkbook.Sheets.Count)
-                    
-                    ' Convert all formulas in the newly copied sheet to their values, keeping formats.
-                    If wsCopiedR.UsedRange.Cells.Count > 0 Then
-                        wsCopiedR.UsedRange.Value = wsCopiedR.UsedRange.Value
-                    End If
-                    
-                    Call WriteLog("INFO", "Copied (R) sheet and converted to values.", "Sheet Name", rSheetName)
-                    Set wsCopiedR = Nothing
-                Else
-                    Call WriteLog("WARNING", "(R) Sheet specified in MasterMapping not found in workbook.", "Sheet Name", rSheetName)
-                End If
-            End If
-        Next j
-        ' --- End [Index 8.1.A] ---
-        
-        ' --- [Index 8.1]: Loop through Selected Sheets for Current Reviewer ---
+    ' STREAMING_CHUNK:Executing main loop for file generation by Reviewer...
+        ' --- [ดัชนี 8.1]: วนลูปตามชีทที่เลือกสำหรับ Reviewer ปัจจุบัน ---
         Dim selectedSheetCol As Long
         Dim tempCollectionForSheetData As Collection
         Dim currentMasterDataCols As Long
-        
-        For selectedSheetCol = 4 To lastColSheets ' Loop through columns D onwards for sheet mappings
+
+        For Each currentReviewerName_str In dictReviewerFiles.Keys
+            Set collProfitCentersForReviewer = dictReviewerFiles.Item(currentReviewerName_str)
+            Set newWorkbook = Application.Workbooks.Add(xlWBATWorksheet)
+            filesProcessed = filesProcessed + 1
+            frmProgress.lblProgress.Caption = "Processing: " & filesProcessed & " / " & totalFilesToProcess
+            currentTime = Timer - StartTime
+            If currentTime < 0 Then currentTime = currentTime + 86400
+            minutes = Int(currentTime / 60)
+            seconds = Int(currentTime Mod 60)
+            frmProgress.lblTime.Caption = "Time Elapsed: " & Format(minutes, "00") & ":" & Format(seconds, "00")
+            DoEvents
+
+        For selectedSheetCol = 4 To lastColSheets ' วนลูปตั้งแต่คอลัมน์ D เป็นต้นไปสำหรับการจับคู่ชีท
             If UBound(arrMasterMapping, 2) >= selectedSheetCol Then
                 Dim isSheetEnabledForReviewer As Boolean: isSheetEnabledForReviewer = False
                 Dim pcMappingRow As Variant
                 For Each pcMappingRow In collProfitCentersForReviewer
-                    If pcMappingRow(selectedSheetCol) = True Then ' Check if this sheet is enabled for any PC of this reviewer
+                    If pcMappingRow(selectedSheetCol) = True Then ' ตรวจสอบว่าชีทนี้ถูกเปิดใช้งานสำหรับ PC ใดๆ ของ Reviewer คนนี้หรือไม่
                         isSheetEnabledForReviewer = True
                         Exit For
                     End If
@@ -315,55 +325,82 @@ Sub genfile_ByReviewer_V11_WithLog()
                     currentMasterDataCols = 0
                     masterSourceSheetName = Trim(CStr(wsMasterMapping.Cells(2, selectedSheetCol).Value))
                     templateSheetName = Trim(CStr(wsMasterMapping.Cells(3, selectedSheetCol).Value))
+                    reportSheetName = Trim(CStr(wsMasterMapping.Cells(4, selectedSheetCol).Value))
                     createdSheetName = masterSourceSheetName
                     If InStr(1, createdSheetName, " (M)", vbTextCompare) = 0 Then
                         createdSheetName = createdSheetName & " (M)"
                     End If
 
                     If dictSheetTemplates.Exists(createdSheetName) Then
-                        ' Modified WriteLog call: Combine arguments into the message string
-                        Call WriteLog("INFO", "Processing sheet '" & createdSheetName & "' for Reviewer '" & currentReviewerName_str & "'")
+                        ' ดึงชื่อ Template จาก Dictionary หรือใช้ชื่อชีท (M) ถ้าไม่มี Template
+                        templateSheetName = dictSheetTemplates.Item(createdSheetName)
+                        
+                        Call WriteLog("INFO", "Processing sheet '" & createdSheetName & "' using source '" & templateSheetName & "' for Reviewer '" & currentReviewerName_str & "'")
+
                         Set wsOriginalTemplate = Nothing
                         On Error Resume Next
                         Set wsOriginalTemplate = ThisWorkbook.Sheets(templateSheetName)
                         On Error GoTo 0
 
+                        ' หากหาชีท Template ไม่เจอ ให้ถอยมาใช้ชีท (M) ต้นฉบับแทน
                         If wsOriginalTemplate Is Nothing Then
-                            Call WriteLog("WARNING", "Template sheet not found, skipping. Template: '" & templateSheetName & "', Reviewer: '" & currentReviewerName_str & "'")
+                            On Error Resume Next
+                            Set wsOriginalTemplate = ThisWorkbook.Sheets(createdSheetName)
+                            On Error GoTo 0
+                        End If
+
+                        ' หากยังไม่พบชีทใดๆ ให้ข้ามไป
+                        If wsOriginalTemplate Is Nothing Then
+                            Call WriteLog("WARNING", "Source/Template sheet not found, skipping. Sheet: '" & createdSheetName & "', Reviewer: '" & currentReviewerName_str & "'")
                             GoTo NextSheetLoopInner
                         End If
 
-                        ' --- [Index 8.1.1]: Copy Template Sheet and Rename ---
+                        ' --- [ดัชนี 8.1.1]: คัดลอกชีท (M) ไปยัง Workbook ใหม่ และล้างข้อมูลตั้งแต่แถว 2 ลงไป แต่คงรูปแบบชีทไว้ ---
                         On Error Resume Next
-                        ThisWorkbook.Sheets(templateSheetName).Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
+                        wsOriginalTemplate.Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
                         Set wsNewWorkbookSheet = newWorkbook.Sheets(newWorkbook.Sheets.Count)
-                        wsNewWorkbookSheet.Name = masterSourceSheetName ' Rename to original master sheet name (without "(M)")
                         On Error GoTo 0
+
                         If wsNewWorkbookSheet Is Nothing Then
-                             Call WriteLog("ERROR", "Failed to copy template sheet. Template: '" & templateSheetName & "', Reviewer: '" & currentReviewerName_str & "'")
+                            Call WriteLog("ERROR", "Failed to copy sheet. Sheet: '" & wsOriginalTemplate.Name & "', Reviewer: '" & currentReviewerName_str & "'")
                             GoTo NextSheetLoopInner
                         End If
-                        Call WriteLog("INFO", "Template sheet copied and renamed. New Sheet: '" & wsNewWorkbookSheet.Name & "', Template: '" & templateSheetName & "'")
-                        ' --- End [Index 8.1.1] ---
 
-                        ' --- [Index 8.1.2]: Retrieve Formulas from Original Template ---
+                        ' คงชื่อชีท (M) ไว้เพื่อให้สูตรอ้างอิงใน Workbook ตรงกัน
+                        On Error Resume Next
+                        wsNewWorkbookSheet.Name = createdSheetName
+                        On Error GoTo 0
+
+                        ' ปลดล็อกสำเนาและล้างเนื้อหาตั้งแต่แถว 2 โดยคงรูปแบบเซลล์ไว้
+                        On Error Resume Next
+                        wsNewWorkbookSheet.Unprotect Password:=SHEET_PASSWORD
+                        wsNewWorkbookSheet.Rows("2:" & wsNewWorkbookSheet.Rows.Count).ClearContents
+                        If Err.Number <> 0 Then
+                            Call WriteLog("ERROR", "Failed to clear contents starting from row 2.", "Error Description", Err.Description)
+                            Err.Clear
+                        End If
+                        On Error GoTo 0
+                        ' --- สิ้นสุด [ดัชนี 8.1.1] ---
+
+                        ' --- [ดัชนี 8.1.2]: ดึงสูตรมาจากชีท (M) ต้นฉบับ ---
                         Dim maxColsInTemplateFormulas As Long
                         maxColsInTemplateFormulas = wsOriginalTemplate.Cells(2, wsOriginalTemplate.Columns.Count).End(xlToLeft).Column
                         If maxColsInTemplateFormulas = 0 Then maxColsInTemplateFormulas = 1
                         arrTemplateFormulas = wsOriginalTemplate.Range("A2").Resize(1, maxColsInTemplateFormulas).FormulaR1C1
-                        Call WriteLog("DEBUG", "Formulas retrieved from template. Template: '" & templateSheetName & "', Columns: " & maxColsInTemplateFormulas)
-                        ' --- End [Index 8.1.2] ---
+                        Call WriteLog("DEBUG", "Formulas retrieved from source sheet '" & wsOriginalTemplate.Name & "'. Columns: " & maxColsInTemplateFormulas)
+                        ' --- สิ้นสุด [ดัชนี 8.1.2] ---
 
-                        ' --- [Index 8.1.3]: Data Processing for the Newly Created Sheet ---
-                        If dictAllMasterData.Exists(createdSheetName) Then ' Use createdSheetName (e.g., "Sheet1 (M)") for lookup
+                        ' STREAMING_CHUNK:Processing data rows for the copied sheet...
+                        ' --- [ดัชนี 8.1.3]: การประมวลผลข้อมูลสำหรับชีทที่สร้างขึ้นใหม่ ---
+                        If dictAllMasterData.Exists(createdSheetName) Then ' ใช้ createdSheetName (เช่น "Sheet1 (M)") ในการค้นหา
                             Set dictSingleMasterGrouped = dictAllMasterData.item(createdSheetName)
                             Dim firstMasterDataRowSet As Boolean: firstMasterDataRowSet = False
                             Dim currentProfitCenterID As String, currentProfitCenterName As String
 
                             For Each pcMappingRow In collProfitCentersForReviewer
-                                If pcMappingRow(selectedSheetCol) = True Then ' Check if this PC is enabled for the current sheet
-                                    currentProfitCenterID = Trim(CStr(pcMappingRow(1))) ' Profit Center ID from Column A
-                                    currentProfitCenterName = Trim(CStr(pcMappingRow(2))) ' Profit Center Name from Column B
+                                If pcMappingRow(selectedSheetCol) = True Then ' ตรวจสอบว่า PC นี้ถูกเปิดใช้งานสำหรับชีทปัจจุบันหรือไม่
+                                    currentProfitCenterID = Trim(CStr(pcMappingRow(1))) ' Profit Center ID จากคอลัมน์ A
+                                    currentProfitCenterName = Trim(CStr(pcMappingRow(2))) ' Profit Center Name จากคอลัมน์ B
                                     If dictSingleMasterGrouped.Exists(currentProfitCenterID) Then
                                         Set masterRowsForProfitCenter = dictSingleMasterGrouped.item(currentProfitCenterID)
                                         If masterRowsForProfitCenter.Count > 0 Then
@@ -382,27 +419,15 @@ Sub genfile_ByReviewer_V11_WithLog()
                                                 Dim rowToAdd As Variant
                                                 ReDim rowToAdd(1 To UBound(masterRowData_1D))
                                                 For k = LBound(masterRowData_1D) To UBound(masterRowData_1D)
-                                                    If IsArray(arrTemplateFormulas) Then
-                                                        If k <= UBound(arrTemplateFormulas, 2) Then
-                                                            If Left(CStr(arrTemplateFormulas(1, k)), 1) = "=" Then
-                                                                rowToAdd(k) = arrTemplateFormulas(1, k)
-                                                            Else
-                                                                rowToAdd(k) = masterRowData_1D(k)
-                                                            End If
-                                                        Else
-                                                            rowToAdd(k) = masterRowData_1D(k)
-                                                        End If
-                                                    Else
-                                                        rowToAdd(k) = masterRowData_1D(k)
-                                                    End If
+                                                    rowToAdd(k) = masterRowData_1D(k)
                                                 Next k
-                                                ' Column AF (32nd in MasterMapping array) to Column A of new sheet (if exists)
+                                                ' คอลัมน์ AF (ตำแหน่งที่ 32 ในอาร์เรย์ MasterMapping) ไปยังคอลัมน์ A ของชีทใหม่ (ถ้ามี)
                                                 If UBound(pcMappingRow) >= 32 Then
-                                                    If UBound(rowToAdd) >= 1 Then rowToAdd(1) = pcMappingRow(32) ' Column AF
+                                                    If UBound(rowToAdd) >= 1 Then rowToAdd(1) = pcMappingRow(32) ' คอลัมน์ AF
                                                 End If
-                                                ' Profit Center ID to Column B of new sheet
+                                                ' Profit Center ID ไปยังคอลัมน์ B ของชีทใหม่
                                                 If UBound(rowToAdd) >= 2 Then rowToAdd(2) = currentProfitCenterID
-                                                ' Profit Center Name to Column C of new sheet
+                                                ' Profit Center Name ไปยังคอลัมน์ C ของชีทใหม่
                                                 If UBound(rowToAdd) >= 3 Then rowToAdd(3) = currentProfitCenterName
                                                 
                                                 tempCollectionForSheetData.Add rowToAdd
@@ -418,6 +443,10 @@ Sub genfile_ByReviewer_V11_WithLog()
                             Next pcMappingRow
 
                             If tempCollectionForSheetData.Count > 0 And currentMasterDataCols > 0 Then
+                                If maxColsInTemplateFormulas > 0 Then
+                                    arrTemplateFormulas = wsOriginalTemplate.Range("A2").Resize(tempCollectionForSheetData.Count, maxColsInTemplateFormulas).FormulaR1C1
+                                End If
+
                                 ReDim arrCurrentSheetFinalData(1 To tempCollectionForSheetData.Count, 1 To currentMasterDataCols)
                                 dataRowCounter = 0
                                 For Each rowToAdd In tempCollectionForSheetData
@@ -426,8 +455,35 @@ Sub genfile_ByReviewer_V11_WithLog()
                                         arrCurrentSheetFinalData(dataRowCounter, k) = rowToAdd(k)
                                     Next k
                                 Next rowToAdd
-                                wsNewWorkbookSheet.Range("A2").Resize(tempCollectionForSheetData.Count, currentMasterDataCols).FormulaR1C1 = arrCurrentSheetFinalData
-                                Call WriteLog("INFO", "Data written to new workbook sheet. Sheet: '" & wsNewWorkbookSheet.Name & "', Rows: " & tempCollectionForSheetData.Count)
+
+                                ' เขียนค่าก่อน แล้วจึงเขียนสูตรทีละเซลล์เหมือน Gen_by_Cost_Center
+                                wsNewWorkbookSheet.Range("A2").Resize(tempCollectionForSheetData.Count, currentMasterDataCols).Value = arrCurrentSheetFinalData
+                                Call WriteLog("INFO", "Data values written to new sheet.", "Sheet Name / Rows", wsNewWorkbookSheet.Name & " / " & tempCollectionForSheetData.Count)
+
+                                If IsArray(arrTemplateFormulas) Then
+                                    Dim rIdx As Long
+                                    Dim cellFormula As String
+
+                                    For k = 1 To currentMasterDataCols
+                                        For rIdx = 1 To tempCollectionForSheetData.Count
+                                            If rIdx <= UBound(arrTemplateFormulas, 1) And k <= UBound(arrTemplateFormulas, 2) Then
+                                                cellFormula = CStr(arrTemplateFormulas(rIdx, k))
+                                                If Left(cellFormula, 1) = "=" And Len(cellFormula) > 1 Then
+                                                    On Error Resume Next
+                                                    wsNewWorkbookSheet.Cells(rIdx + 1, k).FormulaR1C1 = cellFormula
+                                                    If Err.Number <> 0 Then
+                                                        formulaErrorsCount = formulaErrorsCount + 1
+                                                        Call WriteLog("WARNING", "Could not apply formula to generated sheet.", "Cell / Formula", wsNewWorkbookSheet.Cells(rIdx + 1, k).Address(False, False) & " / " & cellFormula)
+                                                        Err.Clear
+                                                    End If
+                                                    On Error GoTo 0
+                                                End If
+                                            End If
+                                        Next rIdx
+                                    Next k
+                                    Call WriteLog("INFO", "Formulas applied cell by cell for formula cells only.", "Sheet Name", wsNewWorkbookSheet.Name)
+                                End If
+
                                 Erase arrCurrentSheetFinalData
                             Else
                                 Call WriteLog("INFO", "No data to write to sheet after filtering. Sheet: '" & wsNewWorkbookSheet.Name & "', Reviewer: '" & currentReviewerName_str & "'")
@@ -437,17 +493,67 @@ Sub genfile_ByReviewer_V11_WithLog()
                         End If
                         Set wsNewWorkbookSheet = Nothing
                         Set wsOriginalTemplate = Nothing
+                    ElseIf Len(masterSourceSheetName) = 0 Then
+                        If Len(reportSheetName) > 0 Then
+                            standaloneSheetName = reportSheetName
+                            Set wsStandaloneSource = Nothing
+                            On Error Resume Next
+                            Set wsStandaloneSource = ThisWorkbook.Sheets(standaloneSheetName)
+                            On Error GoTo 0
+
+                            If Not wsStandaloneSource Is Nothing Then
+                                wsStandaloneSource.Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
+                                Set wsNewWorkbookSheet = newWorkbook.Sheets(newWorkbook.Sheets.Count)
+                                On Error Resume Next
+                                wsNewWorkbookSheet.Name = standaloneSheetName
+                                wsNewWorkbookSheet.Unprotect Password:=SHEET_PASSWORD
+                                wsNewWorkbookSheet.UsedRange.Value = wsNewWorkbookSheet.UsedRange.Value
+                                If Err.Number <> 0 Then
+                                    Call WriteLog("ERROR", "Failed to convert standalone (R) sheet formulas to values.", "Sheet / Error", standaloneSheetName & " / " & Err.Description)
+                                    Err.Clear
+                                End If
+                                On Error GoTo 0
+                                Call WriteLog("INFO", "Copied standalone (R) sheet as values while preserving its formatting.", "Sheet Name", standaloneSheetName)
+                                Set wsNewWorkbookSheet = Nothing
+                            Else
+                                Call WriteLog("WARNING", "Standalone (R) sheet not found; skipping.", "Sheet Name", standaloneSheetName)
+                            End If
+                            Set wsStandaloneSource = Nothing
+                        End If
+
+                        If Len(templateSheetName) > 0 Then
+                            standaloneSheetName = templateSheetName
+                            Set wsStandaloneSource = Nothing
+                            On Error Resume Next
+                            Set wsStandaloneSource = ThisWorkbook.Sheets(standaloneSheetName)
+                            On Error GoTo 0
+
+                            If Not wsStandaloneSource Is Nothing Then
+                                wsStandaloneSource.Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
+                                Set wsNewWorkbookSheet = newWorkbook.Sheets(newWorkbook.Sheets.Count)
+                                On Error Resume Next
+                                wsNewWorkbookSheet.Name = standaloneSheetName
+                                If Err.Number <> 0 Then
+                                    Call WriteLog("ERROR", "Failed to name standalone (T) sheet.", "Sheet / Error", standaloneSheetName & " / " & Err.Description)
+                                    Err.Clear
+                                End If
+                                On Error GoTo 0
+                                Call WriteLog("INFO", "Copied standalone (T) sheet with values, formulas, and formatting intact.", "Sheet Name", standaloneSheetName)
+                                Set wsNewWorkbookSheet = Nothing
+                            Else
+                                Call WriteLog("WARNING", "Standalone (T) sheet not found; skipping.", "Sheet Name", standaloneSheetName)
+                            End If
+                            Set wsStandaloneSource = Nothing
+                        End If
                     End If
                 End If
             End If
 NextSheetLoopInner:
         Next selectedSheetCol
-        ' --- End [Index 8.1] ---
+        ' --- สิ้นสุด [ดัชนี 8.1] ---
 
-        
-
-
-        ' --- [Index 8.2]: Delete Default Sheets in New Workbook ---
+        ' STREAMING_CHUNK:Cleaning up default sheets, clearing unused rows, and setting sheet protection...
+        ' --- [ดัชนี 8.2]: ลบชีทเริ่มต้นในเวิร์กบุ๊กใหม่ ---
         On Error Resume Next
         For Each wsTemp In newWorkbook.Sheets
             If Left(wsTemp.Name, 5) = "Sheet" And IsNumeric(Mid(wsTemp.Name, 6)) Then
@@ -456,27 +562,29 @@ NextSheetLoopInner:
         Next wsTemp
         On Error GoTo 0
         Call WriteLog("INFO", "Deleted default sheets in new workbook. Workbook: '" & newWorkbook.Name & "'")
-        ' --- End [Index 8.2] ---
+        ' --- สิ้นสุด [ดัชนี 8.2] ---
         
-        ' --- [Index 8.3]: Clear Unused Rows in Each Sheet of the New Workbook ---
+        ' --- [ดัชนี 8.3]: ล้างแถวที่ไม่ต้องการในแต่ละชีทของเวิร์กบุ๊กใหม่ ---
         Dim ws As Worksheet, lastRowInB As Long
         For Each ws In newWorkbook.Sheets
-            lastRowInB = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
-            If lastRowInB < ws.Rows.Count Then
-                ws.Rows(lastRowInB + 1 & ":" & ws.Rows.Count).Clear
-                Call WriteLog("DEBUG", "Cleared unused rows in sheet. Sheet: '" & ws.Name & "', Last Row with Data: " & lastRowInB)
+            If InStr(1, ws.Name, " (R)", vbTextCompare) = 0 And InStr(1, ws.Name, " (T)", vbTextCompare) = 0 Then
+                lastRowInB = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+                If lastRowInB < ws.Rows.Count Then
+                    ws.Rows(lastRowInB + 1 & ":" & ws.Rows.Count).Clear
+                    Call WriteLog("DEBUG", "Cleared unused rows in sheet. Sheet: '" & ws.Name & "', Last Row with Data: " & lastRowInB)
+                End If
             End If
         Next ws
-        ' --- End [Index 8.3] ---
+        ' --- สิ้นสุด [ดัชนี 8.3] ---
         
-        ' [8.4] Lock all Sheets with a Password (User's Request)
+        ' [8.4] ล็อกชีททั้งหมดด้วยรหัสผ่าน (ตามคำขอของผู้ใช้)
         '--------------------------------------------------------------------------------------------------------------------
         Dim ws2 As Worksheet
         For Each ws2 In newWorkbook.Worksheets
             
-            ws2.Unprotect Password:="MTIEPBCS"
+            ws2.Unprotect Password:=SHEET_PASSWORD
         
-            ws2.Protect Password:="MTIEPBCS", _
+            ws2.Protect Password:=SHEET_PASSWORD, _
                AllowInsertingRows:=False, _
                AllowDeletingRows:=False, _
                AllowInsertingColumns:=False, _
@@ -488,10 +596,11 @@ NextSheetLoopInner:
         Next ws2
         Call WriteLog("INFO", "All sheets in the new workbook have been locked with a password.")
 
-        ' --- [Index 8.5]: File Saving Operations ---
-        ' Column AD (30th column in 1-based MasterMapping array) contains the new file path.
+        ' STREAMING_CHUNK:Saving output workbook to folder path...
+        ' --- [ดัชนี 8.5]: การดำเนินการบันทึกไฟล์ ---
+        ' คอลัมน์ AD (คอลัมน์ที่ 30 ในอาร์เรย์ MasterMapping ฐาน 1) ประกอบด้วยเส้นทางไฟล์ใหม่
         If collProfitCentersForReviewer.Count > 0 Then
-            newFilePath = CStr(collProfitCentersForReviewer.item(1)(30)) ' Column AD
+            newFilePath = CStr(collProfitCentersForReviewer.item(1)(30)) ' คอลัมน์ AD
         Else
             newFilePath = ""
         End If
@@ -537,12 +646,12 @@ SkipFileSave:
             Set newWorkbook = Nothing
         End If
     Next currentReviewerName_str
-    ' --- End [Index 8] ---
+    ' --- สิ้นสุด [ดัชนี 8] ---
 
-    ' --- [Index 9]: CleanUp and Restore Excel Settings ---
+    ' STREAMING_CHUNK:Cleaning up and restoring Excel application settings...
+    ' --- [ดัชนี 9]: คืนค่าการตั้งค่า Excel และล้างตัวแปร ---
 CleanUp:
     Application.ScreenUpdating = True
-    Application.Calculation = xlCalculationAutomatic
     Application.EnableEvents = True
     Application.DisplayAlerts = True
     Call WriteLog("INFO", "Application settings restored.")
@@ -562,19 +671,20 @@ CleanUp:
     Call WriteLog("INFO", "All object variables cleared.")
 
     If Not IsEmpty(arrMasterMapping) Then Erase arrMasterMapping
-    ' Check if arrMasterData is initialized and not empty before erasing
+    ' ตรวจสอบว่า arrMasterData ถูกกำหนดค่าและไม่ว่างเปล่าก่อนล้างค่า
     If Not IsEmpty(arrMasterData) And IsArray(arrMasterData) Then Erase arrMasterData
-    ' Check if arrCurrentSheetFinalData is initialized and not empty before erasing
+    ' ตรวจสอบว่า arrCurrentSheetFinalData ถูกกำหนดค่าและไม่ว่างเปล่าก่อนล้างค่า
     If Not IsEmpty(arrCurrentSheetFinalData) And IsArray(arrCurrentSheetFinalData) Then Erase arrCurrentSheetFinalData
-    ' Check if arrTemplateFormulas is initialized and not empty before erasing
+    ' ตรวจสอบว่า arrTemplateFormulas ถูกกำหนดค่าและไม่ว่างเปล่าก่อนล้างค่า
     If IsArray(arrTemplateFormulas) Then Erase arrTemplateFormulas
     Call WriteLog("INFO", "All array variables cleared.")
 
     endTime = Timer
     runTime = endTime - StartTime
-    ' --- End [Index 9] ---
+    ' --- สิ้นสุด [ดัชนี 9] ---
 
-    ' --- [Index 10]: Update UserForm and Display Final Message ---
+    ' STREAMING_CHUNK:Updating UserForm and displaying final completion message...
+    ' --- [ดัชนี 10]: อัปเดต UserForm และแสดงข้อความสิ้นสุดการทำงาน ---
     If Not frmProgress Is Nothing Then
         With frmProgress
             .lblProgress.Caption = "Processing Complete!"
@@ -595,9 +705,10 @@ CleanUp:
 
 End Sub
 
-' --- Helper Function for Logging (from Prototype) ---
+' STREAMING_CHUNK:Writing helper function for logging...
+' --- ฟังก์ชันผู้ช่วยสำหรับการบันทึก Log (จากต้นแบบ) ---
 Sub WriteLog(logType As String, message As String, Optional varName As String = "", Optional varValue As Variant)
-    ' Purpose: Writes a log entry to the specified log sheet.
+    ' วัตถุประสงค์: บันทึกข้อมูล Log ลงในชีทที่กำหนด
     Dim wsLog As Worksheet
     Dim nextRow As Long
     Dim logDetail As String
@@ -606,7 +717,7 @@ Sub WriteLog(logType As String, message As String, Optional varName As String = 
 
     On Error GoTo ErrorHandler
 
-    ' Check if the log sheet exists, create it if not.
+    ' ตรวจสอบว่ามีชีท Log อยู่หรือไม่ หากไม่มีให้สร้างใหม่
     On Error Resume Next
     Set wsLog = currentWorkbook.Sheets(LOG_SHEET_NAME)
     On Error GoTo 0
@@ -625,10 +736,10 @@ Sub WriteLog(logType As String, message As String, Optional varName As String = 
         End With
     End If
 
-    ' Find the next available row in the log sheet.
+    ' ค้นหาแถวถัดไปที่ว่างอยู่ในชีท Log
     nextRow = wsLog.Cells(wsLog.Rows.Count, "A").End(xlUp).Row + 1
 
-    ' Construct the variable detail string if varName is provided.
+    ' สร้างข้อความรายละเอียดตัวแปรหากมีการระบุ varName
     If varName <> "" Then
         If IsObject(varValue) And Not IsEmpty(varValue) Then
             On Error Resume Next
@@ -647,7 +758,7 @@ Sub WriteLog(logType As String, message As String, Optional varName As String = 
         logDetail = ""
     End If
 
-    ' Write the log entry to the log sheet.
+    ' เขียนรายการ Log ลงในชีท Log
     With wsLog
         .Cells(nextRow, 1).Value = Now
         .Cells(nextRow, 2).Value = logType
@@ -663,5 +774,3 @@ ErrorHandler:
     Debug.Print "Error in WriteLog function: " & Err.Description & " (Log Type: " & logType & ", Message: " & message & ")"
     On Error GoTo 0
 End Sub
-
-
