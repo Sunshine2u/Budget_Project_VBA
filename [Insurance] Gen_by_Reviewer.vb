@@ -199,7 +199,7 @@ Sub genfile_ByReviewer_V11_WithLog()
     Dim lastRowMasterSource As Long
     Dim lastColMasterSource As Long
     Dim masterKey As String
-    Dim masterRowData_1D As Variant
+    Dim masterRowIndex As Variant
     Dim masterRowsForProfitCenter As Collection
     Dim dictSingleMasterGrouped As Object
 
@@ -213,24 +213,19 @@ Sub genfile_ByReviewer_V11_WithLog()
                 Set dictSingleMasterGrouped = CreateObject("Scripting.Dictionary")
                 For k = LBound(arrMasterData, 1) To UBound(arrMasterData, 1)
                     masterKey = Trim(CStr(arrMasterData(k, 2))) ' สมมติว่า Profit Center ID อยู่ในคอลัมน์ B ของชีท Master
-                    ReDim masterRowData_1D(1 To UBound(arrMasterData, 2))
-                    For col = LBound(arrMasterData, 2) To UBound(arrMasterData, 2)
-                        masterRowData_1D(col) = arrMasterData(k, col)
-                    Next col
                     If Not dictSingleMasterGrouped.Exists(masterKey) Then
                         Set masterRowsForProfitCenter = New Collection
                         dictSingleMasterGrouped.Add masterKey, masterRowsForProfitCenter
                     Else
                         Set masterRowsForProfitCenter = dictSingleMasterGrouped.item(masterKey)
                     End If
-                    masterRowsForProfitCenter.Add masterRowData_1D
+                    masterRowsForProfitCenter.Add k
                 Next k
                 dictAllMasterData.Add wsMasterSource.Name, dictSingleMasterGrouped
+                Erase arrMasterData
             End If
         End If
     Next wsMasterSource
-
-    If Not IsEmpty(arrMasterData) Then Erase arrMasterData
 
     If dictAllMasterData.Count = 0 And Not hasStandaloneSheets Then
         MsgBox "No Master sheets with names containing ' (M)' and data found in this workbook.", vbExclamation
@@ -366,6 +361,9 @@ Sub genfile_ByReviewer_V11_WithLog()
                             GoTo NextSheetLoopInner
                         End If
 
+                        Dim lastRowFromColumnB As Long
+                        lastRowFromColumnB = wsOriginalTemplate.Cells(wsOriginalTemplate.Rows.Count, "B").End(xlUp).Row
+
                         ' คงชื่อชีท (M) ไว้เพื่อให้สูตรอ้างอิงใน Workbook ตรงกัน
                         On Error Resume Next
                         wsNewWorkbookSheet.Name = createdSheetName
@@ -374,7 +372,9 @@ Sub genfile_ByReviewer_V11_WithLog()
                         ' ปลดล็อกสำเนาและล้างเนื้อหาตั้งแต่แถว 2 โดยคงรูปแบบเซลล์ไว้
                         On Error Resume Next
                         wsNewWorkbookSheet.Unprotect Password:=SHEET_PASSWORD
-                        wsNewWorkbookSheet.Rows("2:" & wsNewWorkbookSheet.Rows.Count).ClearContents
+                        If lastRowFromColumnB >= 2 Then
+                            wsNewWorkbookSheet.Rows("2:" & lastRowFromColumnB).ClearContents
+                        End If
                         If Err.Number <> 0 Then
                             Call WriteLog("ERROR", "Failed to clear contents starting from row 2.", "Error Description", Err.Description)
                             Err.Clear
@@ -394,8 +394,12 @@ Sub genfile_ByReviewer_V11_WithLog()
                         ' --- [ดัชนี 8.1.3]: การประมวลผลข้อมูลสำหรับชีทที่สร้างขึ้นใหม่ ---
                         If dictAllMasterData.Exists(createdSheetName) Then ' ใช้ createdSheetName (เช่น "Sheet1 (M)") ในการค้นหา
                             Set dictSingleMasterGrouped = dictAllMasterData.item(createdSheetName)
-                            Dim firstMasterDataRowSet As Boolean: firstMasterDataRowSet = False
                             Dim currentProfitCenterID As String, currentProfitCenterName As String
+                            Set wsMasterSource = ThisWorkbook.Sheets(createdSheetName)
+                            lastRowMasterSource = wsMasterSource.Cells(wsMasterSource.Rows.Count, "B").End(xlUp).Row
+                            lastColMasterSource = wsMasterSource.Cells(1, wsMasterSource.Columns.Count).End(xlToLeft).Column
+                            arrMasterData = wsMasterSource.Range(wsMasterSource.Cells(2, "A"), wsMasterSource.Cells(lastRowMasterSource, lastColMasterSource)).Value
+                            currentMasterDataCols = UBound(arrMasterData, 2)
 
                             For Each pcMappingRow In collProfitCentersForReviewer
                                 If pcMappingRow(selectedSheetCol) = True Then ' ตรวจสอบว่า PC นี้ถูกเปิดใช้งานสำหรับชีทปัจจุบันหรือไม่
@@ -404,22 +408,11 @@ Sub genfile_ByReviewer_V11_WithLog()
                                     If dictSingleMasterGrouped.Exists(currentProfitCenterID) Then
                                         Set masterRowsForProfitCenter = dictSingleMasterGrouped.item(currentProfitCenterID)
                                         If masterRowsForProfitCenter.Count > 0 Then
-                                            If Not firstMasterDataRowSet Then
-                                                If IsArray(masterRowsForProfitCenter.item(1)) Then
-                                                    currentMasterDataCols = UBound(masterRowsForProfitCenter.item(1))
-                                                    firstMasterDataRowSet = True
-                                                End If
-                                            End If
-                                            If IsArray(masterRowsForProfitCenter.item(1)) Then
-                                                If UBound(masterRowsForProfitCenter.item(1)) > currentMasterDataCols Then
-                                                    currentMasterDataCols = UBound(masterRowsForProfitCenter.item(1))
-                                                End If
-                                            End If
-                                            For Each masterRowData_1D In masterRowsForProfitCenter
+                                            For Each masterRowIndex In masterRowsForProfitCenter
                                                 Dim rowToAdd As Variant
-                                                ReDim rowToAdd(1 To UBound(masterRowData_1D))
-                                                For k = LBound(masterRowData_1D) To UBound(masterRowData_1D)
-                                                    rowToAdd(k) = masterRowData_1D(k)
+                                                ReDim rowToAdd(1 To currentMasterDataCols)
+                                                For k = 1 To currentMasterDataCols
+                                                    rowToAdd(k) = arrMasterData(CLng(masterRowIndex), k)
                                                 Next k
                                                 ' คอลัมน์ AF (ตำแหน่งที่ 32 ในอาร์เรย์ MasterMapping) ไปยังคอลัมน์ A ของชีทใหม่ (ถ้ามี)
                                                 If UBound(pcMappingRow) >= 32 Then
@@ -432,7 +425,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                                                 
                                                 tempCollectionForSheetData.Add rowToAdd
                                                
-                                            Next masterRowData_1D
+                                            Next masterRowIndex
                                         Else
                                             Call WriteLog("WARNING", "No master data found for Profit Center. PC: '" & currentProfitCenterID & " (" & currentProfitCenterName & ")', Sheet: '" & wsNewWorkbookSheet.Name & "'")
                                         End If
@@ -463,25 +456,73 @@ Sub genfile_ByReviewer_V11_WithLog()
                                 If IsArray(arrTemplateFormulas) Then
                                     Dim rIdx As Long
                                     Dim cellFormula As String
+                                    Dim formulaStartRow As Long
+                                    Dim formulaRunLength As Long
+                                    Dim formulaOffset As Long
+                                    Dim formulaBlock As Variant
+                                    Dim formulaBlockError As String
+                                    Dim formulaFallbackErrors As Long
+                                    Dim formulaFallbackFirstFailure As String
+                                    Dim formulaRange As Range
 
                                     For k = 1 To currentMasterDataCols
-                                        For rIdx = 1 To tempCollectionForSheetData.Count
+                                        rIdx = 1
+                                        Do While rIdx <= tempCollectionForSheetData.Count
+                                            cellFormula = ""
                                             If rIdx <= UBound(arrTemplateFormulas, 1) And k <= UBound(arrTemplateFormulas, 2) Then
                                                 cellFormula = CStr(arrTemplateFormulas(rIdx, k))
-                                                If Left(cellFormula, 1) = "=" And Len(cellFormula) > 1 Then
-                                                    On Error Resume Next
-                                                    wsNewWorkbookSheet.Cells(rIdx + 1, k).FormulaR1C1 = cellFormula
-                                                    If Err.Number <> 0 Then
-                                                        formulaErrorsCount = formulaErrorsCount + 1
-                                                        Call WriteLog("WARNING", "Could not apply formula to generated sheet.", "Cell / Formula", wsNewWorkbookSheet.Cells(rIdx + 1, k).Address(False, False) & " / " & cellFormula)
-                                                        Err.Clear
-                                                    End If
-                                                    On Error GoTo 0
-                                                End If
                                             End If
-                                        Next rIdx
+
+                                            If Left(cellFormula, 1) = "=" And Len(cellFormula) > 1 Then
+                                                formulaStartRow = rIdx
+                                                Do While rIdx <= tempCollectionForSheetData.Count
+                                                    If rIdx > UBound(arrTemplateFormulas, 1) Or k > UBound(arrTemplateFormulas, 2) Then Exit Do
+                                                    cellFormula = CStr(arrTemplateFormulas(rIdx, k))
+                                                    If Left(cellFormula, 1) <> "=" Or Len(cellFormula) <= 1 Then Exit Do
+                                                    rIdx = rIdx + 1
+                                                Loop
+
+                                                formulaRunLength = rIdx - formulaStartRow
+                                                ReDim formulaBlock(1 To formulaRunLength, 1 To 1)
+                                                For formulaOffset = 1 To formulaRunLength
+                                                    formulaBlock(formulaOffset, 1) = arrTemplateFormulas(formulaStartRow + formulaOffset - 1, k)
+                                                Next formulaOffset
+
+                                                Set formulaRange = wsNewWorkbookSheet.Cells(formulaStartRow + 1, k).Resize(formulaRunLength, 1)
+                                                On Error Resume Next
+                                                formulaRange.FormulaR1C1 = formulaBlock
+                                                If Err.Number <> 0 Then
+                                                    formulaBlockError = CStr(Err.Number) & ": " & Err.Description
+                                                    Err.Clear
+                                                    formulaFallbackErrors = 0
+                                                    formulaFallbackFirstFailure = ""
+
+                                                    For formulaOffset = 1 To formulaRunLength
+                                                        wsNewWorkbookSheet.Cells(formulaStartRow + formulaOffset, k).FormulaR1C1 = formulaBlock(formulaOffset, 1)
+                                                        If Err.Number <> 0 Then
+                                                            formulaFallbackErrors = formulaFallbackErrors + 1
+                                                            If Len(formulaFallbackFirstFailure) = 0 Then
+                                                                formulaFallbackFirstFailure = wsNewWorkbookSheet.Cells(formulaStartRow + formulaOffset, k).Address(False, False) & " / " & CStr(formulaBlock(formulaOffset, 1)) & " / " & CStr(Err.Number) & ": " & Err.Description
+                                                            End If
+                                                            Err.Clear
+                                                        End If
+                                                    Next formulaOffset
+
+                                                    If formulaFallbackErrors > 0 Then
+                                                        formulaErrorsCount = formulaErrorsCount + formulaFallbackErrors
+                                                        Call WriteLog("WARNING", "Formula block and cell-by-cell fallback both failed.", "Range / Errors", formulaRange.Address(False, False) & " / Block: " & formulaBlockError & " / Cells failed: " & formulaFallbackErrors & " / First failure: " & formulaFallbackFirstFailure)
+                                                    Else
+                                                        Call WriteLog("INFO", "Formula block failed; cell-by-cell fallback succeeded.", "Range / Original Error", formulaRange.Address(False, False) & " / " & formulaBlockError)
+                                                    End If
+                                                End If
+                                                On Error GoTo 0
+                                                Set formulaRange = Nothing
+                                            Else
+                                                rIdx = rIdx + 1
+                                            End If
+                                        Loop
                                     Next k
-                                    Call WriteLog("INFO", "Formulas applied cell by cell for formula cells only.", "Sheet Name", wsNewWorkbookSheet.Name)
+                                    Call WriteLog("INFO", "Formulas applied in contiguous blocks for formula cells only.", "Sheet Name", wsNewWorkbookSheet.Name)
                                 End If
 
                                 Erase arrCurrentSheetFinalData
@@ -491,6 +532,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                         Else
                             Call WriteLog("WARNING", "Master (M) sheet data not found in dictAllMasterData. Master Sheet: '" & createdSheetName & "'")
                         End If
+                        If IsArray(arrMasterData) Then Erase arrMasterData
                         Set wsNewWorkbookSheet = Nothing
                         Set wsOriginalTemplate = Nothing
                     ElseIf Len(masterSourceSheetName) = 0 Then
@@ -702,6 +744,10 @@ CleanUp:
     seconds = Int(runTime Mod 60)
     MsgBox "Completed Run Time: " & Format(minutes, "00") & " minutes and " & Format(seconds, "00") & " seconds"
     Call WriteLog("INFO", "Macro finished.", "Total Run Time", Format(minutes, "00") & ":" & Format(seconds, "00"))
+    On Error Resume Next
+    Set wsLog = ThisWorkbook.Sheets(LOG_SHEET_NAME)
+    If Not wsLog Is Nothing Then wsLog.Columns("A:E").AutoFit
+    On Error GoTo 0
 
 End Sub
 
@@ -732,7 +778,6 @@ Sub WriteLog(logType As String, message As String, Optional varName As String = 
             .Cells(1, 4).Value = "Variable Name"
             .Cells(1, 5).Value = "Variable Value"
             .Rows(1).Font.Bold = True
-            .Columns("A:E").AutoFit
         End With
     End If
 
@@ -765,7 +810,6 @@ Sub WriteLog(logType As String, message As String, Optional varName As String = 
         .Cells(nextRow, 3).Value = message
         .Cells(nextRow, 4).Value = varName
         .Cells(nextRow, 5).Value = logDetail
-        .Columns("A:E").AutoFit
     End With
 
     Exit Sub
