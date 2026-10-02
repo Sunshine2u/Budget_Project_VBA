@@ -22,8 +22,6 @@ Sub genfile_ByReviewer_V11_WithLog()
     Dim wsFormulaCell As Range
     Dim wsTargetFormulaCell As Range
     Dim wsStandaloneFormulaCells As Range
-    Dim wsOutputTable As ListObject
-    Dim wsOutputFilterRange As Range
     Dim wsOutputSheet As Worksheet
     Dim wsLog As Worksheet                  ' วัตถุ Worksheet สำหรับบันทึก Log
     Dim formulaErrorsCount As Long          ' ตัวนับสำหรับข้อผิดพลาดของสูตร
@@ -33,9 +31,6 @@ Sub genfile_ByReviewer_V11_WithLog()
     Dim formulaCellText As String
     Dim formulaCellAddress As String
     Dim standaloneFormulaCellCount As Long
-    Dim copiedTableCount As Long
-    Dim tableIndex As Long
-    Dim progressCheckCounter As Long
 
     ' ประกาศตัวแปรสำหรับเก็บข้อมูลในอาร์เรย์เพื่อการประมวลผลที่เร็วขึ้น
     Dim arrMasterMapping As Variant
@@ -88,13 +83,6 @@ Sub genfile_ByReviewer_V11_WithLog()
     Application.Calculation = xlCalculationManual
     Application.EnableEvents = False
     Application.DisplayAlerts = False
-
-    With frmProgress
-        .lblProgress.Caption = "Preparing data..."
-        .lblTime.Caption = "Elapsed: 00:00:00"
-        .Show vbModeless
-    End With
-    Call RefreshProgressForm(frmProgress, StartTime, True)
 
     ' --- บันทึก LOG: เริ่มต้นการทำงานของแมโคร ---
     Call WriteLog("INFO", "Macro started: genfile_ByReviewer_V10_WithLog")
@@ -233,17 +221,12 @@ Sub genfile_ByReviewer_V11_WithLog()
                 arrMasterData = wsMasterSource.Range(wsMasterSource.Cells(2, "A"), wsMasterSource.Cells(lastRowMasterSource, lastColMasterSource)).Value
                 Set dictSingleMasterGrouped = CreateObject("Scripting.Dictionary")
                 For k = LBound(arrMasterData, 1) To UBound(arrMasterData, 1)
-                    progressCheckCounter = progressCheckCounter + 1
-                    If progressCheckCounter >= 500 Then
-                        Call RefreshProgressForm(frmProgress, StartTime)
-                        progressCheckCounter = 0
-                    End If
                     masterKey = Trim(CStr(arrMasterData(k, 2))) ' สมมติว่า Profit Center ID อยู่ในคอลัมน์ B ของชีท Master
                     If Not dictSingleMasterGrouped.Exists(masterKey) Then
                         Set masterRowsForProfitCenter = New Collection
                         dictSingleMasterGrouped.Add masterKey, masterRowsForProfitCenter
                     Else
-                        Set masterRowsForProfitCenter = dictSingleMasterGrouped.item(masterKey)
+                        Set masterRowsForProfitCenter = dictSingleMasterGrouped.Item(masterKey)
                     End If
                     masterRowsForProfitCenter.Add k
                 Next k
@@ -270,11 +253,6 @@ Sub genfile_ByReviewer_V11_WithLog()
     Dim collProfitCentersForReviewer As Collection
 
     For i = 1 To UBound(arrMasterMapping, 1)
-        progressCheckCounter = progressCheckCounter + 1
-        If progressCheckCounter >= 500 Then
-            Call RefreshProgressForm(frmProgress, StartTime)
-            progressCheckCounter = 0
-        End If
         ' คอลัมน์สำหรับชื่อ Reviewer คือ AE (คอลัมน์ที่ 31 ในอาร์เรย์ฐาน 1)
         ' คอลัมน์สำหรับกล่องกาถูก TRUE/FALSE คือ C (คอลัมน์ที่ 3)
         ' ตรวจสอบว่ามีคอลัมน์ AE อยู่หรือไม่ (คอลัมน์ที่ 31)
@@ -286,7 +264,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                     Set collProfitCentersForReviewer = New Collection
                     dictReviewerFiles.Add reviewerName, collProfitCentersForReviewer
                 Else
-                    Set collProfitCentersForReviewer = dictReviewerFiles.item(reviewerName)
+                    Set collProfitCentersForReviewer = dictReviewerFiles.Item(reviewerName)
                 End If
                 ReDim masterMappingRowData_1D(1 To UBound(arrMasterMapping, 2))
                 For col = LBound(arrMasterMapping, 2) To UBound(arrMasterMapping, 2)
@@ -310,9 +288,10 @@ Sub genfile_ByReviewer_V11_WithLog()
     totalFilesToProcess = dictReviewerFiles.Count
     With frmProgress
         .lblProgress.Caption = "Processing: 0 / " & totalFilesToProcess
+        .lblTime.Caption = "Time Elapsed: 00:00"
+        .Show vbModeless
     End With
     filesProcessed = 0
-    Call RefreshProgressForm(frmProgress, StartTime, True)
     Call WriteLog("INFO", "Progress UserForm initialized and displayed.")
     ' --- สิ้นสุด [ดัชนี 7] ---
 
@@ -327,18 +306,18 @@ Sub genfile_ByReviewer_V11_WithLog()
             Set newWorkbook = Application.Workbooks.Add(xlWBATWorksheet)
             filesProcessed = filesProcessed + 1
             frmProgress.lblProgress.Caption = "Processing: " & filesProcessed & " / " & totalFilesToProcess
-            Call RefreshProgressForm(frmProgress, StartTime, True)
+            currentTime = Timer - StartTime
+            If currentTime < 0 Then currentTime = currentTime + 86400
+            minutes = Int(currentTime / 60)
+            seconds = Int(currentTime Mod 60)
+            frmProgress.lblTime.Caption = "Time Elapsed: " & Format(minutes, "00") & ":" & Format(seconds, "00")
+            DoEvents
 
         For selectedSheetCol = 4 To lastColSheets ' วนลูปตั้งแต่คอลัมน์ D เป็นต้นไปสำหรับการจับคู่ชีท
             If UBound(arrMasterMapping, 2) >= selectedSheetCol Then
                 Dim isSheetEnabledForReviewer As Boolean: isSheetEnabledForReviewer = False
                 Dim pcMappingRow As Variant
                 For Each pcMappingRow In collProfitCentersForReviewer
-                    progressCheckCounter = progressCheckCounter + 1
-                    If progressCheckCounter >= 500 Then
-                        Call RefreshProgressForm(frmProgress, StartTime)
-                        progressCheckCounter = 0
-                    End If
                     ' 1. ตรวจสอบว่าดัชนีคอลัมน์ไม่เกินขนาดอาร์เรย์
                     If selectedSheetCol <= UBound(pcMappingRow) Then
                         ' 2. ตรวจสอบว่าเซลล์นั้นไม่ใช่ค่า Error (เช่น #N/A, #VALUE!)
@@ -429,7 +408,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                         ' STREAMING_CHUNK:Processing data rows for the copied sheet...
                         ' --- [ดัชนี 8.1.3]: การประมวลผลข้อมูลสำหรับชีทที่สร้างขึ้นใหม่ ---
                         If dictAllMasterData.Exists(createdSheetName) Then ' ใช้ createdSheetName (เช่น "Sheet1 (M)") ในการค้นหา
-                            Set dictSingleMasterGrouped = dictAllMasterData.item(createdSheetName)
+                            Set dictSingleMasterGrouped = dictAllMasterData.Item(createdSheetName)
                             Dim currentProfitCenterID As String, currentProfitCenterName As String
                             Set wsMasterSource = ThisWorkbook.Sheets(createdSheetName)
                             lastRowMasterSource = wsMasterSource.Cells(wsMasterSource.Rows.Count, "B").End(xlUp).Row
@@ -438,23 +417,13 @@ Sub genfile_ByReviewer_V11_WithLog()
                             currentMasterDataCols = UBound(arrMasterData, 2)
 
                             For Each pcMappingRow In collProfitCentersForReviewer
-                                progressCheckCounter = progressCheckCounter + 1
-                                If progressCheckCounter >= 500 Then
-                                    Call RefreshProgressForm(frmProgress, StartTime)
-                                    progressCheckCounter = 0
-                                End If
                                 If pcMappingRow(selectedSheetCol) = True Then ' ตรวจสอบว่า PC นี้ถูกเปิดใช้งานสำหรับชีทปัจจุบันหรือไม่
                                     currentProfitCenterID = Trim(CStr(pcMappingRow(1))) ' Profit Center ID จากคอลัมน์ A
                                     currentProfitCenterName = Trim(CStr(pcMappingRow(2))) ' Profit Center Name จากคอลัมน์ B
                                     If dictSingleMasterGrouped.Exists(currentProfitCenterID) Then
-                                        Set masterRowsForProfitCenter = dictSingleMasterGrouped.item(currentProfitCenterID)
+                                        Set masterRowsForProfitCenter = dictSingleMasterGrouped.Item(currentProfitCenterID)
                                         If masterRowsForProfitCenter.Count > 0 Then
                                             For Each masterRowIndex In masterRowsForProfitCenter
-                                                progressCheckCounter = progressCheckCounter + 1
-                                                If progressCheckCounter >= 500 Then
-                                                    Call RefreshProgressForm(frmProgress, StartTime)
-                                                    progressCheckCounter = 0
-                                                End If
                                                 Dim rowToAdd As Variant
                                                 ReDim rowToAdd(1 To currentMasterDataCols)
                                                 For k = 1 To currentMasterDataCols
@@ -497,7 +466,6 @@ Sub genfile_ByReviewer_V11_WithLog()
 
                                 ' เขียนค่าก่อน แล้วจึงเขียนสูตรทีละเซลล์เหมือน Gen_by_Cost_Center
                                 wsNewWorkbookSheet.Range("A2").Resize(tempCollectionForSheetData.Count, currentMasterDataCols).Value = arrCurrentSheetFinalData
-                                Call RefreshProgressForm(frmProgress, StartTime)
                                 Call WriteLog("INFO", "Data values written to new sheet.", "Sheet Name / Rows", wsNewWorkbookSheet.Name & " / " & tempCollectionForSheetData.Count)
 
                                 If IsArray(arrTemplateFormulas) Then
@@ -515,11 +483,6 @@ Sub genfile_ByReviewer_V11_WithLog()
                                     For k = 1 To currentMasterDataCols
                                         rIdx = 1
                                         Do While rIdx <= tempCollectionForSheetData.Count
-                                            progressCheckCounter = progressCheckCounter + 1
-                                            If progressCheckCounter >= 500 Then
-                                                Call RefreshProgressForm(frmProgress, StartTime)
-                                                progressCheckCounter = 0
-                                            End If
                                             cellFormula = ""
                                             If rIdx <= UBound(arrTemplateFormulas, 1) And k <= UBound(arrTemplateFormulas, 2) Then
                                                 cellFormula = CStr(arrTemplateFormulas(rIdx, k))
@@ -607,32 +570,6 @@ Sub genfile_ByReviewer_V11_WithLog()
                                     Err.Clear
                                 End If
                                 On Error GoTo 0
-
-                                copiedTableCount = wsNewWorkbookSheet.ListObjects.Count
-                                Set wsOutputFilterRange = wsNewWorkbookSheet.UsedRange
-
-                                On Error Resume Next
-                                For tableIndex = copiedTableCount To 1 Step -1
-                                    Set wsOutputTable = wsNewWorkbookSheet.ListObjects(tableIndex)
-                                    wsOutputTable.Unlist
-                                    If Err.Number <> 0 Then
-                                        Call WriteLog("WARNING", "Could not convert copied (R) table to a range.", "Table / Error", wsOutputTable.Name & " / " & CStr(Err.Number) & ": " & Err.Description)
-                                        Err.Clear
-                                    End If
-                                Next tableIndex
-
-                                If wsNewWorkbookSheet.AutoFilterMode Then wsNewWorkbookSheet.AutoFilterMode = False
-                                wsOutputFilterRange.AutoFilter
-                                If Err.Number <> 0 Then
-                                    Call WriteLog("WARNING", "Could not apply AutoFilter to copied (R) data range.", "Range / Error", wsOutputFilterRange.Address(False, False) & " / " & CStr(Err.Number) & ": " & Err.Description)
-                                    Err.Clear
-                                Else
-                                    Call WriteLog("INFO", "Applied AutoFilter to copied (R) data range.", "Sheet / Range / Tables Converted", standaloneSheetName & " / " & wsOutputFilterRange.Address(False, False) & " / " & copiedTableCount)
-                                End If
-                                On Error GoTo 0
-                                Set wsOutputTable = Nothing
-                                Set wsOutputFilterRange = Nothing
-
                                 Call WriteLog("INFO", "Copied standalone (R) sheet as values while preserving its formatting.", "Sheet Name", standaloneSheetName)
                                 Set wsNewWorkbookSheet = Nothing
                             Else
@@ -702,11 +639,6 @@ NextSheetLoopInner:
                 If Not wsStandaloneFormulaCells Is Nothing Then
                     standaloneFormulaCellCount = wsStandaloneFormulaCells.Cells.Count
                     For Each wsFormulaCell In wsStandaloneFormulaCells.Cells
-                        progressCheckCounter = progressCheckCounter + 1
-                        If progressCheckCounter >= 500 Then
-                            Call RefreshProgressForm(frmProgress, StartTime)
-                            progressCheckCounter = 0
-                        End If
                         formulaCellText = CStr(wsFormulaCell.FormulaR1C1)
                         formulaCellAddress = wsFormulaCell.Address(False, False)
                         Set wsTargetFormulaCell = wsOutputSheet.Range(formulaCellAddress)
@@ -784,7 +716,7 @@ NextSheetLoopInner:
         ' --- [ดัชนี 8.5]: การดำเนินการบันทึกไฟล์ ---
         ' คอลัมน์ AD (คอลัมน์ที่ 30 ในอาร์เรย์ MasterMapping ฐาน 1) ประกอบด้วยเส้นทางไฟล์ใหม่
         If collProfitCentersForReviewer.Count > 0 Then
-            newFilePath = CStr(collProfitCentersForReviewer.item(1)(30)) ' คอลัมน์ AD
+            newFilePath = CStr(collProfitCentersForReviewer.Item(1)(30)) ' คอลัมน์ AD
         Else
             newFilePath = ""
         End If
@@ -891,35 +823,6 @@ CleanUp:
     If Not wsLog Is Nothing Then wsLog.Columns("A:E").AutoFit
     On Error GoTo 0
 
-End Sub
-
-Private Sub RefreshProgressForm(ByVal progressForm As Object, ByVal startTime As Double, Optional ByVal forceUpdate As Boolean = False)
-    Static lastUpdate As Double
-    Dim currentTimer As Double
-    Dim elapsedSeconds As Double
-    Dim hours As Long
-    Dim elapsedMinutes As Long
-    Dim elapsedRemainderSeconds As Long
-
-    currentTimer = Timer
-    If Not forceUpdate Then
-        If currentTimer >= lastUpdate Then
-            If currentTimer - lastUpdate < 5 Then Exit Sub
-        ElseIf currentTimer + 86400 - lastUpdate < 5 Then
-            Exit Sub
-        End If
-    End If
-
-    elapsedSeconds = currentTimer - startTime
-    If elapsedSeconds < 0 Then elapsedSeconds = elapsedSeconds + 86400
-    hours = Int(elapsedSeconds / 3600)
-    elapsedMinutes = Int((elapsedSeconds Mod 3600) / 60)
-    elapsedRemainderSeconds = Int(elapsedSeconds Mod 60)
-
-    progressForm.lblTime.Caption = "Elapsed: " & Format(hours, "00") & ":" & Format(elapsedMinutes, "00") & ":" & Format(elapsedRemainderSeconds, "00")
-    progressForm.Repaint
-    DoEvents
-    lastUpdate = currentTimer
 End Sub
 
 ' STREAMING_CHUNK:Writing helper function for logging...
