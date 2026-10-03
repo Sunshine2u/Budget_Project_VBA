@@ -9,7 +9,6 @@ Workbook ต้นแบบที่เกี่ยวข้อง: `Template_In
 ## ไฟล์หลัก
 
 - `[Insurance] Gen_by_Reviewer.vb` — สร้างหนึ่ง Workbook ต่อ Reviewer; รองรับชีท `(M)`, standalone `(T)` และ `(R)`
-- `[Insurrance] Gen_by_Cost_Center.vb` — สร้างหนึ่ง Workbook ต่อ Profit Center; มี flow `(M)/(T)/(R)` ที่เป็นต้นแบบเปรียบเทียบ
 - `note.vb` — ตัวอย่างสูตรที่อ้างอิง Table `Sale_Target` และชีท `Sale Target (R)`
 - `Logs.txt` — ตัวอย่างผล Log จากการรัน; ใช้ตรวจ error และเวลาประมวลผล
 
@@ -34,17 +33,18 @@ Workbook ต้นแบบที่เกี่ยวข้อง: `Template_In
 
 ## Flow: Reviewer
 
-1. โหลด MasterMapping และเตรียม Log
-2. สแกนชื่อชีทในแถว 2–4 เพื่อสร้าง mapping ของ `(M)/(T)/(R)`
-3. โหลดข้อมูลทุกชีท `(M)` โดยใช้คอลัมน์ B หาแถวสุดท้าย และจัดกลุ่ม Profit Center ID เป็น Dictionary ของ row indexes
-4. จัดกลุ่มแถว MasterMapping ที่คอลัมน์ C เป็น TRUE ตามชื่อ Reviewer ในคอลัมน์ AE
-5. สร้าง Workbook หนึ่งไฟล์ต่อ Reviewer
-6. สำหรับแต่ละคอลัมน์ชีทที่เลือก: ถ้ามีชื่อ `(M)` จะใช้ `(M)` เป็นแหล่งหลัก; ถ้าไม่มีชื่อ `(M)` จึงพิจารณา standalone `(R)/(T)`
-7. ชีท `(M)` ถูก Duplicate โดยคง suffix `(M)` ล้าง contents แถว 2 ถึงแถวสุดท้ายที่อ้างอิงจากคอลัมน์ B แล้วเติมข้อมูลเฉพาะ PC ที่ถูกเลือก
-8. คอลัมน์ A รับค่า AF, B รับ PC ID, C รับ PC Name
-9. เขียนค่าแต่ละ record ก่อน จากนั้นจับสูตรจากแถว Master (M) ต้นทางเดียวกับ record/PC นั้นและเขียนลงแถว output ที่ตรงกัน; เซลล์ต้นทางที่เป็น Value จะไม่ถูกแทนด้วยสูตรจาก template row 2, คอลัมน์ A:C ยังคงใช้ค่า override, และสูตรที่ติดกันยังเขียนเป็นช่วงพร้อม fallback ทีละเซลล์
-10. standalone `(R)` ถูก Duplicate แล้วแปลง UsedRange เป็นค่า; standalone `(T)` ถูก Duplicate โดยคงค่าและสูตร
-11. ลบชีทเริ่มต้น, ล้างแถวส่วนเกินเฉพาะชีทที่ไม่ใช่ `(R)/(T)`, ป้องกันชีท และบันทึกไฟล์
+1. จับค่า Application settings เดิม, แสดง progress form แล้วคำนวณทุก worksheet ใน `ThisWorkbook`
+2. ปิด Events/Alerts, เริ่ม Log, อ่านชื่อ MasterMapping จาก `Action_Page!A6` แล้วโหลดข้อมูล Mapping
+3. สแกนแถว 2–4 เพื่อสร้าง mapping ของ `(M)/(T)/(R)`
+4. โหลดข้อมูลทุกชีท `(M)` โดยใช้คอลัมน์ B หาแถวสุดท้าย และจัดกลุ่ม Profit Center ID เป็น Dictionary ของ row indexes
+5. จัดกลุ่มแถว MasterMapping ที่คอลัมน์ C เป็น TRUE ตามชื่อ Reviewer ในคอลัมน์ AE
+6. สร้าง Workbook หนึ่งไฟล์ต่อ Reviewer
+7. สำหรับแต่ละคอลัมน์ชีทที่เลือก: ถ้า row 2 ระบุ `(M)` จะคัดลอก `(M)` หรือใช้ `(T)` เป็น template เมื่อไม่พบ `(M)` แล้วเติมได้เมื่อโหลด Master `(M)` data สำเร็จ; ถ้า row 2 ว่างจึงพิจารณา standalone `(R)/(T)`
+8. ชีท `(M)` ถูก Duplicate, ล้าง contents แถว 2 ถึงแถวสุดท้ายที่อ้างอิงจากคอลัมน์ B แล้วรวบรวม record ของ PC ที่เลือกพร้อม source row index
+9. เขียน values ก่อน โดยคอลัมน์ A รับ AF, B รับ PC ID, C รับ PC Name; อ่านสูตรจาก source row ของแต่ละ record เฉพาะคอลัมน์ D เป็นต้นไป แล้วเขียนลง output row ที่ตรงกัน สูตรที่ติดกันเขียนเป็นช่วงและ fallback ทีละเซลล์หากช่วงล้มเหลว
+10. standalone `(R)` ถูก Duplicate, แปลง UsedRange เป็นค่า, แปลง Table เป็น range และใช้ AutoFilter; standalone `(T)` ถูก Duplicate โดยคงค่า สูตร และ format จากนั้นคืนสูตรจากต้นฉบับอีกครั้งหลังคัดลอกชีทที่ map ครบ
+11. ลบชีทเริ่มต้น, ล้างแถวส่วนเกินเฉพาะชีทที่ไม่ใช่ `(R)/(T)`, ป้องกันชีท แล้วบันทึกเมื่อมี output path; ถ้า path ว่างหรือสร้างโฟลเดอร์/บันทึกไม่สำเร็จ จะ log และปิด Workbook โดยไม่บันทึก
+12. Cleanup คืน Application settings เดิมและปล่อย object/array; เมื่อสำเร็จแสดงข้อความจบงาน แต่เมื่อเกิด unexpected runtime error จะ log, ปิดฟอร์ม, แจ้ง error และคง Workbook ที่กำลังสร้างไว้เปิดตรวจสอบ
 
 ชื่อไฟล์ใช้ชื่อ Reviewer และบันทึกในโฟลเดอร์จากคอลัมน์ AD ของแถวแรกในกลุ่ม Reviewer หากชื่อไฟล์ซ้ำจะเพิ่มเลขลำดับ
 
@@ -52,88 +52,116 @@ Workbook ต้นแบบที่เกี่ยวข้อง: `Template_In
 
 ```mermaid
 sequenceDiagram
-	actor User
-	participant Macro as genfile_ByReviewer_V11_WithLog
-	participant Mapping as Action_Page / MasterMapping
-	participant Source as ThisWorkbook Sheets
-	participant Progress as frmProgress
-	participant Output as New Workbook
-	participant FileSystem as FileSystemObject
+    actor User
+    participant Macro as genfile_ByReviewer_V11_WithLog
+    participant Mapping as Action_Page / MasterMapping
+    participant Source as ThisWorkbook Sheets
+    participant Progress as frmProgress
+    participant Output as New Workbook
+    participant FileSystem as FileSystemObject
 
-	User->>Macro: Run macro
-	activate Macro
-	Macro->>Macro: Capture current Application settings; disable ScreenUpdating; set Calculation to Manual
-	Macro->>Progress: Show modeless form and start elapsed timer
-	loop Each worksheet in ThisWorkbook
-		Macro->>Progress: Show worksheet name and refresh elapsed time
-		Macro->>Source: Calculate worksheet
-	end
-	Macro->>Macro: Disable Events and Alerts
-	Macro->>Mapping: Read Action_Page!A6
-	Mapping-->>Macro: MasterMapping sheet name
-	Macro->>Mapping: Load A5:AR through last row in column A
-	Macro->>Mapping: Read sheet mappings from rows 2-4
+    User->>Macro: Run macro
+    activate Macro
+    Macro->>Macro: Capture current Application settings, disable ScreenUpdating, and set Calculation to Manual
+    Macro->>Progress: Show modeless form and start elapsed timer
+    loop Each worksheet in ThisWorkbook
+        Macro->>Progress: Show worksheet name and refresh elapsed time
+        Macro->>Source: Calculate worksheet
+    end
+    Macro->>Macro: Disable Events and Alerts
+    Macro->>Mapping: Read Action_Page!A6
+    Mapping-->>Macro: MasterMapping sheet name
+    Macro->>Mapping: Load A5:AR through last row in column A
+    Macro->>Mapping: Read sheet mappings from rows 2-4
 
-	loop Each source sheet with (M) and data
-		Macro->>Source: Read rows 2:last row using column B
-		Source-->>Macro: 2D data array
-		Macro->>Macro: Group row indexes by Profit Center ID
-	end
+    loop Each source sheet with (M) and data
+        Macro->>Source: Read rows 2:last row using column B
+        Source-->>Macro: 2D data array
+        Macro->>Macro: Group row indexes by Profit Center ID
+    end
 
-	Macro->>Macro: Group selected mapping rows by Reviewer (C=TRUE, AE has name)
-	Macro->>Progress: Show modeless form; initialize progress labels
+    Macro->>Macro: Group selected mapping rows by Reviewer (C=TRUE, AE has name)
+    Macro->>Progress: Show modeless form and initialize progress labels
 
-	loop Each Reviewer
-		Macro->>Output: Create a new workbook
-		Macro->>Progress: Update file count and elapsed time; DoEvents
+    loop Each Reviewer
+        Macro->>Output: Create a new workbook
+        Macro->>Progress: Update file count, elapsed time, and process UI events
 
-		loop Each selected sheet column (D:last mapping column)
-			Macro->>Mapping: Read row 2 (M), row 3 (T), row 4 (R)
-			Macro->>Macro: Check whether any PC for this Reviewer selected the column
-			alt Column selected and row 2 names an (M) sheet
-				Macro->>Source: Copy selected source/template sheet
-				Source-->>Output: Duplicate sheet named with (M)
-				Macro->>Output: Clear rows 2:last row from source column B
-				Macro->>Source: Retrieve grouped rows and FormulaR1C1 array
-				Source-->>Macro: Values and formulas
-				Macro->>Output: Write filtered values; override A/B/C from AF and PC mapping
-				Macro->>Output: Write contiguous formula blocks
-				opt Formula block write fails
-					Macro->>Output: Retry formulas cell by cell
-					Macro->>Macro: Log remaining failures with address, formula, and error
-				end
-			else Column selected and row 2 is blank
-				opt Row 4 names an (R) sheet
-					Macro->>Source: Copy standalone (R) sheet
-					Source-->>Output: Duplicate sheet with original formatting
-					Macro->>Output: Replace UsedRange formulas with current values
-				end
-				opt Row 3 names a (T) sheet
-					Macro->>Source: Copy standalone (T) sheet
-					Source-->>Output: Duplicate sheet with values, formulas, and formatting
-				end
-			end
-		end
+        loop Each selected sheet column (D:last mapping column)
+            Macro->>Mapping: Read row 2 (M), row 3 (T), row 4 (R)
+            Macro->>Macro: Check whether any PC for this Reviewer selected the column
+            alt Column selected and row 2 names an (M) sheet
+                Macro->>Source: Copy selected source/template sheet
+                Source-->>Output: Duplicate sheet named with (M)
+                Macro->>Output: Clear rows 2:last row from source column B
+                alt Master (M) data was loaded
+                    Macro->>Source: Retrieve selected PC row indexes and Master values
+                    Source-->>Macro: Ordered values and source row indexes
+                    Macro->>Output: Write filtered values and override A/B/C from AF and PC mapping
+                    loop Each selected output record
+                        Macro->>Source: Read FormulaR1C1 from that record's actual Master row
+                        Macro->>Macro: Keep only source formulas in columns D:last column
+                    end
+                    Macro->>Output: Write formulas to their matching output rows in contiguous blocks
+                    opt Formula block write fails
+                        Macro->>Output: Retry formulas cell by cell
+                        Macro->>Macro: Log remaining failures with address, formula, and error
+                    end
+                else Master (M) data missing
+                    Macro->>Macro: Log warning and leave copied sheet without PC rows
+                end
+            else Column selected and row 2 is blank
+                opt Row 4 names an (R) sheet
+                    Macro->>Source: Copy standalone (R) sheet
+                    Source-->>Output: Duplicate sheet with original formatting
+                    Macro->>Output: Replace UsedRange formulas with current values
+                    Macro->>Output: Unlist copied Tables and apply AutoFilter to UsedRange
+                end
+                opt Row 3 names a (T) sheet
+                    Macro->>Source: Copy standalone (T) sheet
+                    Source-->>Output: Duplicate sheet with values, formulas, and formatting
+                end
+            end
+        end
 
-		Macro->>Output: Delete default sheets; trim unused rows on non-(R)/(T) sheets
-		Macro->>Output: Protect worksheets
-		Macro->>FileSystem: Ensure Reviewer output folder exists
-		Macro->>Output: SaveAs .xlsx using Reviewer name
-		Macro->>Output: Close workbook
-	end
+        loop Each copied standalone (T) sheet
+            Macro->>Source: Read formula cells from original (T) sheet
+            Macro->>Output: Reapply formulas after all mapped sheets are copied
+        end
 
-	alt Normal completion
-		Macro->>Macro: Restore captured Application settings
-		Macro->>Progress: Show completion briefly, then unload
-		Macro->>Mapping: Append final log and AutoFit columns once
-		Macro-->>User: Show completion message
-	else Unexpected VBA runtime error
-		Macro->>Mapping: Log error number, source, and description
-		Macro->>Macro: Restore captured Application settings and release references
-		Macro->>Progress: Unload progress form and display error
-		Note over Output: Leave any partial output workbook open for inspection
-	end
-	deactivate Macro
+        Macro->>Output: Delete default sheets and trim unused rows on non-(R)/(T) sheets
+        Macro->>Output: Protect worksheets
+        alt Output path provided
+            Macro->>FileSystem: Ensure Reviewer output folder exists
+            alt Folder creation fails
+                Macro->>Mapping: Log folder error
+                Macro->>Output: Close workbook without saving
+            else Folder available
+                Macro->>Output: SaveAs .xlsx using Reviewer name
+                opt SaveAs fails
+                    Macro->>Mapping: Log save error
+                end
+                Macro->>Output: Close workbook
+            end
+        else Output path missing
+            Macro->>Mapping: Log missing path
+            Macro->>Output: Close workbook without saving
+        end
+    end
+
+    alt Normal completion
+        Macro->>Macro: Restore captured Application settings
+        Macro->>Macro: Release object and array references
+        Macro->>Progress: Show completion briefly, then unload
+        Macro-->>User: Show completion message
+        Macro->>Mapping: Append final log and AutoFit columns once
+    else Unexpected VBA runtime error
+        Macro->>Mapping: Log error number, source, and description
+        Macro->>Macro: Restore captured Application settings and release object/array references
+        Macro->>Progress: Unload progress form and display error
+        Note over Output: Leave any partial output workbook open for inspection
+    end
+    deactivate Macro
 ```
 
 ## Flow: Cost Center
