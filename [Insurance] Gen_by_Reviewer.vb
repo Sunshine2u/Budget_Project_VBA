@@ -26,6 +26,10 @@ Sub genfile_ByReviewer_V11_WithLog()
     Dim wsOutputFilterRange As Range
     Dim wsOutputSheet As Worksheet
     Dim wsLog As Worksheet                  ' วัตถุ Worksheet สำหรับบันทึก Log
+    Dim wsCalculation As Worksheet
+    Dim wsTemplateShape As Shape
+    Dim wsCopiedShape As Shape
+    Dim dictTemplateShapeText As Object
     Dim formulaErrorsCount As Long          ' ตัวนับสำหรับข้อผิดพลาดของสูตร
     Dim standaloneSheetName As String
     Dim standaloneFormulaErrors As Long
@@ -86,14 +90,25 @@ Sub genfile_ByReviewer_V11_WithLog()
 
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
-    Application.EnableEvents = False
-    Application.DisplayAlerts = False
 
     With frmProgress
-        .lblProgress.Caption = "Preparing data..."
+        .lblProgress.Caption = "Calculating worksheets..."
         .lblTime.Caption = "Elapsed: 00:00:00"
         .Show vbModeless
     End With
+    Call RefreshProgressForm(frmProgress, StartTime, True)
+
+    For Each wsCalculation In ThisWorkbook.Worksheets
+        frmProgress.lblProgress.Caption = "Calculating: " & wsCalculation.Name
+        Call RefreshProgressForm(frmProgress, StartTime, True)
+        wsCalculation.Calculate
+    Next wsCalculation
+    Call RefreshProgressForm(frmProgress, StartTime, True)
+
+    Application.EnableEvents = False
+    Application.DisplayAlerts = False
+
+    frmProgress.lblProgress.Caption = "Preparing data..."
     Call RefreshProgressForm(frmProgress, StartTime, True)
 
     ' --- บันทึก LOG: เริ่มต้นการทำงานของแมโคร ---
@@ -386,6 +401,16 @@ Sub genfile_ByReviewer_V11_WithLog()
                             GoTo NextSheetLoopInner
                         End If
 
+                        Set dictTemplateShapeText = CreateObject("Scripting.Dictionary")
+                        For Each wsTemplateShape In wsOriginalTemplate.Shapes
+                            On Error Resume Next
+                            If wsTemplateShape.TextFrame2.HasText Then
+                                dictTemplateShapeText(wsTemplateShape.Name) = wsTemplateShape.TextFrame2.TextRange.Text
+                            End If
+                            Err.Clear
+                            On Error GoTo 0
+                        Next wsTemplateShape
+
                         ' --- [ดัชนี 8.1.1]: คัดลอกชีท (M) ไปยัง Workbook ใหม่ และล้างข้อมูลตั้งแต่แถว 2 ลงไป แต่คงรูปแบบชีทไว้ ---
                         On Error Resume Next
                         wsOriginalTemplate.Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
@@ -416,6 +441,21 @@ Sub genfile_ByReviewer_V11_WithLog()
                             Err.Clear
                         End If
                         On Error GoTo 0
+
+                        For Each wsCopiedShape In wsNewWorkbookSheet.Shapes
+                            If dictTemplateShapeText.Exists(wsCopiedShape.Name) Then
+                                On Error Resume Next
+                                wsCopiedShape.TextFrame2.TextRange.Text = dictTemplateShapeText(wsCopiedShape.Name)
+                                If Err.Number <> 0 Then
+                                    Call WriteLog("WARNING", "Could not restore text on copied shape.", "Shape / Error", wsCopiedShape.Name & " / " & CStr(Err.Number) & ": " & Err.Description)
+                                    Err.Clear
+                                End If
+                                On Error GoTo 0
+                            End If
+                        Next wsCopiedShape
+                        Set dictTemplateShapeText = Nothing
+                        Set wsTemplateShape = Nothing
+                        Set wsCopiedShape = Nothing
                         ' --- สิ้นสุด [ดัชนี 8.1.1] ---
 
                         ' --- [ดัชนี 8.1.2]: ดึงสูตรมาจากชีท (M) ต้นฉบับ ---
