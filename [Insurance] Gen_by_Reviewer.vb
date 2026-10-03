@@ -6,12 +6,24 @@ Public Const SHEET_PASSWORD As String = "MTIEPBCS"
 
 Sub genfile_ByReviewer_V11_WithLog()
 
+    On Error GoTo ErrorHandler
+
     ' STREAMING_CHUNK:Declaring variables and initializing timing variables...
     ' --- [ดัชนี 1]: การประกาศตัวแปร ---
     ' ประกาศตัวแปรสำหรับการจับเวลาการทำงาน
     Dim StartTime As Double
     Dim endTime As Double
     Dim runTime As Double
+    Dim savedScreenUpdating As Boolean
+    Dim savedCalculation As XlCalculation
+    Dim savedEnableEvents As Boolean
+    Dim savedDisplayAlerts As Boolean
+    Dim runtimeErrorNumber As Long
+    Dim runtimeErrorDescription As String
+    Dim runtimeErrorSource As String
+    Dim runFailed As Boolean
+    Dim progressFormShown As Boolean
+    Dim applicationStateCaptured As Boolean
 
     ' ประกาศวัตถุ Worksheet เพื่อให้อ้างอิงได้ง่ายขึ้น
     Dim wsMasterMapping As Worksheet        ' วัตถุ Worksheet สำหรับ "MasterMapping"
@@ -50,15 +62,12 @@ Sub genfile_ByReviewer_V11_WithLog()
     ' STREAMING_CHUNK:Initializing dictionary objects...
     ' ประกาศวัตถุ Dictionary สำหรับการค้นหาข้อมูล Master (M) ที่รวดเร็ว
     Dim dictAllMasterData As Object
-    Set dictAllMasterData = CreateObject("Scripting.Dictionary")
 
     ' ประกาศตัวแปรสำหรับเก็บการจับคู่ชีทและตัวนับรอบการวนลูป
     Dim dictSheetTemplates As Object
-    Set dictSheetTemplates = CreateObject("Scripting.Dictionary")
 
     ' Dictionary สำหรับจัดกลุ่ม Profit Center ตาม Reviewer
     Dim dictReviewerFiles As Object
-    Set dictReviewerFiles = CreateObject("Scripting.Dictionary")
 
     Dim i As Long, j As Long, k As Long
     Dim dataRowCounter As Long
@@ -81,6 +90,16 @@ Sub genfile_ByReviewer_V11_WithLog()
     Dim currentReviewerName_str As Variant
     ' --- สิ้นสุด [ดัชนี 1] ---
 
+    savedScreenUpdating = Application.ScreenUpdating
+    savedCalculation = Application.Calculation
+    savedEnableEvents = Application.EnableEvents
+    savedDisplayAlerts = Application.DisplayAlerts
+    applicationStateCaptured = True
+
+    Set dictAllMasterData = CreateObject("Scripting.Dictionary")
+    Set dictSheetTemplates = CreateObject("Scripting.Dictionary")
+    Set dictReviewerFiles = CreateObject("Scripting.Dictionary")
+
     ' STREAMING_CHUNK:Configuring system settings and preparing log sheet...
     ' --- [ดัชนี 2]: เริ่มต้นการทำงานของ FileSystemObject และการตั้งค่า Application ---
     Dim fso As Object
@@ -94,6 +113,7 @@ Sub genfile_ByReviewer_V11_WithLog()
     With frmProgress
         .lblProgress.Caption = "Calculating worksheets..."
         .lblTime.Caption = "Elapsed: 00:00:00"
+        progressFormShown = True
         .Show vbModeless
     End With
     Call RefreshProgressForm(frmProgress, StartTime, True)
@@ -118,6 +138,7 @@ Sub genfile_ByReviewer_V11_WithLog()
     On Error Resume Next
     Set wsLog = ThisWorkbook.Sheets(LOG_SHEET_NAME)
     On Error GoTo 0
+    On Error GoTo ErrorHandler
 
     If Not wsLog Is Nothing Then
         ' ตรวจสอบว่ามีข้อมูลต่อจากหัวข้อก่อนทำการล้างข้อมูลหรือไม่
@@ -171,6 +192,7 @@ Sub genfile_ByReviewer_V11_WithLog()
         wsMasterMapping.Cells(4, wsMasterMapping.Columns.Count).End(xlToLeft).Column)
     If lastColSheets < 4 Then lastColSheets = 3 ' ตรวจสอบให้แน่ใจว่าพิจารณาอย่างน้อยคอลัมน์ D (ดัชนี 4 ในฐาน 1) สำหรับการจับคู่ชีท
     On Error GoTo 0
+    On Error GoTo ErrorHandler
 
     For j = 4 To lastColSheets
         masterSourceSheetName = Trim(CStr(wsMasterMapping.Cells(2, j).Value))
@@ -192,6 +214,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                     On Error Resume Next
                     Set wsOriginalTemplate = ThisWorkbook.Sheets(createdSheetName)
                     On Error GoTo 0
+                    On Error GoTo ErrorHandler
 
                     If Not wsOriginalTemplate Is Nothing Then
                         targetTemplate = createdSheetName
@@ -200,6 +223,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                         On Error Resume Next
                         Set wsOriginalTemplate = ThisWorkbook.Sheets(templateSheetName)
                         On Error GoTo 0
+                        On Error GoTo ErrorHandler
                         If Not wsOriginalTemplate Is Nothing Then
                             targetTemplate = templateSheetName
                             Call WriteLog("INFO", "Template sheet selected because the Master sheet was not found.", "Template Sheet", templateSheetName)
@@ -387,12 +411,14 @@ Sub genfile_ByReviewer_V11_WithLog()
                         On Error Resume Next
                         Set wsOriginalTemplate = ThisWorkbook.Sheets(templateSheetName)
                         On Error GoTo 0
+                        On Error GoTo ErrorHandler
 
                         ' หากหาชีท Template ไม่เจอ ให้ถอยมาใช้ชีท (M) ต้นฉบับแทน
                         If wsOriginalTemplate Is Nothing Then
                             On Error Resume Next
                             Set wsOriginalTemplate = ThisWorkbook.Sheets(createdSheetName)
                             On Error GoTo 0
+                            On Error GoTo ErrorHandler
                         End If
 
                         ' หากยังไม่พบชีทใดๆ ให้ข้ามไป
@@ -409,6 +435,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                             End If
                             Err.Clear
                             On Error GoTo 0
+                            On Error GoTo ErrorHandler
                         Next wsTemplateShape
 
                         ' --- [ดัชนี 8.1.1]: คัดลอกชีท (M) ไปยัง Workbook ใหม่ และล้างข้อมูลตั้งแต่แถว 2 ลงไป แต่คงรูปแบบชีทไว้ ---
@@ -416,6 +443,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                         wsOriginalTemplate.Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
                         Set wsNewWorkbookSheet = newWorkbook.Sheets(newWorkbook.Sheets.Count)
                         On Error GoTo 0
+                        On Error GoTo ErrorHandler
 
                         If wsNewWorkbookSheet Is Nothing Then
                             Call WriteLog("ERROR", "Failed to copy sheet. Sheet: '" & wsOriginalTemplate.Name & "', Reviewer: '" & currentReviewerName_str & "'")
@@ -429,6 +457,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                         On Error Resume Next
                         wsNewWorkbookSheet.Name = createdSheetName
                         On Error GoTo 0
+                        On Error GoTo ErrorHandler
 
                         ' ปลดล็อกสำเนาและล้างเนื้อหาตั้งแต่แถว 2 โดยคงรูปแบบเซลล์ไว้
                         On Error Resume Next
@@ -441,6 +470,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                             Err.Clear
                         End If
                         On Error GoTo 0
+                        On Error GoTo ErrorHandler
 
                         For Each wsCopiedShape In wsNewWorkbookSheet.Shapes
                             If dictTemplateShapeText.Exists(wsCopiedShape.Name) Then
@@ -451,6 +481,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                                     Err.Clear
                                 End If
                                 On Error GoTo 0
+                                On Error GoTo ErrorHandler
                             End If
                         Next wsCopiedShape
                         Set dictTemplateShapeText = Nothing
@@ -608,6 +639,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                                                     End If
                                                 End If
                                                 On Error GoTo 0
+                                                On Error GoTo ErrorHandler
                                                 Set formulaRange = Nothing
                                             Else
                                                 rIdx = rIdx + 1
@@ -634,6 +666,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                             On Error Resume Next
                             Set wsStandaloneSource = ThisWorkbook.Sheets(standaloneSheetName)
                             On Error GoTo 0
+                            On Error GoTo ErrorHandler
 
                             If Not wsStandaloneSource Is Nothing Then
                                 wsStandaloneSource.Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
@@ -647,6 +680,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                                     Err.Clear
                                 End If
                                 On Error GoTo 0
+                                On Error GoTo ErrorHandler
 
                                 copiedTableCount = wsNewWorkbookSheet.ListObjects.Count
                                 Set wsOutputFilterRange = wsNewWorkbookSheet.UsedRange
@@ -670,6 +704,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                                     Call WriteLog("INFO", "Applied AutoFilter to copied (R) data range.", "Sheet / Range / Tables Converted", standaloneSheetName & " / " & wsOutputFilterRange.Address(False, False) & " / " & copiedTableCount)
                                 End If
                                 On Error GoTo 0
+                                On Error GoTo ErrorHandler
                                 Set wsOutputTable = Nothing
                                 Set wsOutputFilterRange = Nothing
 
@@ -687,6 +722,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                             On Error Resume Next
                             Set wsStandaloneSource = ThisWorkbook.Sheets(standaloneSheetName)
                             On Error GoTo 0
+                            On Error GoTo ErrorHandler
 
                             If Not wsStandaloneSource Is Nothing Then
                                 wsStandaloneSource.Copy After:=newWorkbook.Sheets(newWorkbook.Sheets.Count)
@@ -698,6 +734,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                                     Err.Clear
                                 End If
                                 On Error GoTo 0
+                                On Error GoTo ErrorHandler
                                 Call WriteLog("INFO", "Copied standalone (T) sheet with values, formulas, and formatting intact.", "Sheet Name", standaloneSheetName)
                                 Set wsNewWorkbookSheet = Nothing
                             Else
@@ -738,6 +775,7 @@ NextSheetLoopInner:
                     End If
                 End If
                 On Error GoTo 0
+                On Error GoTo ErrorHandler
 
                 If Not wsStandaloneFormulaCells Is Nothing Then
                     standaloneFormulaCellCount = wsStandaloneFormulaCells.Cells.Count
@@ -761,6 +799,7 @@ NextSheetLoopInner:
                             Err.Clear
                         End If
                         On Error GoTo 0
+                        On Error GoTo ErrorHandler
                     Next wsFormulaCell
                 End If
 
@@ -785,6 +824,7 @@ NextSheetLoopInner:
             End If
         Next wsTemp
         On Error GoTo 0
+        On Error GoTo ErrorHandler
         Call WriteLog("INFO", "Deleted default sheets in new workbook. Workbook: '" & newWorkbook.Name & "'")
         ' --- สิ้นสุด [ดัชนี 8.2] ---
         
@@ -843,6 +883,7 @@ NextSheetLoopInner:
                     GoTo SkipFileSave
                 End If
                 On Error GoTo 0
+                On Error GoTo ErrorHandler
                 Call WriteLog("INFO", "Created new output folder. Folder Path: '" & folderPath & "'")
             End If
             fileName = baseFileName & ".xlsx"
@@ -861,7 +902,9 @@ NextSheetLoopInner:
                 Call WriteLog("INFO", "Workbook saved successfully. Full Path: '" & folderPath & Application.PathSeparator & fileName & "'")
             End If
             On Error GoTo 0
+            On Error GoTo ErrorHandler
 SkipFileSave:
+            On Error GoTo ErrorHandler
             newWorkbook.Close SaveChanges:=False
             Set newWorkbook = Nothing
         Else
@@ -875,9 +918,13 @@ SkipFileSave:
     ' STREAMING_CHUNK:Cleaning up and restoring Excel application settings...
     ' --- [ดัชนี 9]: คืนค่าการตั้งค่า Excel และล้างตัวแปร ---
 CleanUp:
-    Application.ScreenUpdating = True
-    Application.EnableEvents = True
-    Application.DisplayAlerts = True
+    On Error Resume Next
+    If applicationStateCaptured Then
+        Application.ScreenUpdating = savedScreenUpdating
+        Application.Calculation = savedCalculation
+        Application.EnableEvents = savedEnableEvents
+        Application.DisplayAlerts = savedDisplayAlerts
+    End If
     Call WriteLog("INFO", "Application settings restored.")
 
     Set wsMasterMapping = Nothing
@@ -909,27 +956,47 @@ CleanUp:
 
     ' STREAMING_CHUNK:Updating UserForm and displaying final completion message...
     ' --- [ดัชนี 10]: อัปเดต UserForm และแสดงข้อความสิ้นสุดการทำงาน ---
-    If Not frmProgress Is Nothing Then
-        With frmProgress
-            .lblProgress.Caption = "Processing Complete!"
-            minutes = Int(runTime / 60)
-            seconds = Int(runTime Mod 60)
-            .lblTime.Caption = "Total Time: " & Format(minutes, "00") & ":" & Format(seconds, "00")
-            If .Visible Then Application.Wait Now + TimeValue("00:00:03")
+    If runFailed Then
+        If progressFormShown Then
             Unload frmProgress
-        End With
-        Set frmProgress = Nothing
-        Call WriteLog("INFO", "Progress UserForm closed.")
-    End If
+            progressFormShown = False
+        End If
+        MsgBox "Macro stopped due to runtime error " & runtimeErrorNumber & _
+            " (" & runtimeErrorSource & "): " & runtimeErrorDescription, vbCritical
+    Else
+        If progressFormShown Then
+            With frmProgress
+                .lblProgress.Caption = "Processing Complete!"
+                minutes = Int(runTime / 60)
+                seconds = Int(runTime Mod 60)
+                .lblTime.Caption = "Total Time: " & Format(minutes, "00") & ":" & Format(seconds, "00")
+                If .Visible Then Application.Wait Now + TimeValue("00:00:03")
+                Unload frmProgress
+            End With
+            progressFormShown = False
+            Set frmProgress = Nothing
+            Call WriteLog("INFO", "Progress UserForm closed.")
+        End If
 
-    minutes = Int(runTime / 60)
-    seconds = Int(runTime Mod 60)
-    MsgBox "Completed Run Time: " & Format(minutes, "00") & " minutes and " & Format(seconds, "00") & " seconds"
-    Call WriteLog("INFO", "Macro finished.", "Total Run Time", Format(minutes, "00") & ":" & Format(seconds, "00"))
+        minutes = Int(runTime / 60)
+        seconds = Int(runTime Mod 60)
+        MsgBox "Completed Run Time: " & Format(minutes, "00") & " minutes and " & Format(seconds, "00") & " seconds"
+        Call WriteLog("INFO", "Macro finished.", "Total Run Time", Format(minutes, "00") & ":" & Format(seconds, "00"))
+    End If
     On Error Resume Next
     Set wsLog = ThisWorkbook.Sheets(LOG_SHEET_NAME)
     If Not wsLog Is Nothing Then wsLog.Columns("A:E").AutoFit
     On Error GoTo 0
+    Exit Sub
+
+ErrorHandler:
+    runtimeErrorNumber = Err.Number
+    runtimeErrorDescription = Err.Description
+    runtimeErrorSource = Err.Source
+    runFailed = True
+    On Error Resume Next
+    Call WriteLog("ERROR", "Unexpected runtime error.", "Number / Source / Description", CStr(runtimeErrorNumber) & " / " & runtimeErrorSource & " / " & runtimeErrorDescription)
+    Resume CleanUp
 
 End Sub
 

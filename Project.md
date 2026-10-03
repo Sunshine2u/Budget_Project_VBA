@@ -62,7 +62,13 @@ sequenceDiagram
 
 	User->>Macro: Run macro
 	activate Macro
-	Macro->>Macro: Disable ScreenUpdating, Events, Alerts; set Calculation to Manual
+	Macro->>Macro: Capture current Application settings; disable ScreenUpdating; set Calculation to Manual
+	Macro->>Progress: Show modeless form and start elapsed timer
+	loop Each worksheet in ThisWorkbook
+		Macro->>Progress: Show worksheet name and refresh elapsed time
+		Macro->>Source: Calculate worksheet
+	end
+	Macro->>Macro: Disable Events and Alerts
 	Macro->>Mapping: Read Action_Page!A6
 	Mapping-->>Macro: MasterMapping sheet name
 	Macro->>Mapping: Load A5:AR through last row in column A
@@ -116,10 +122,17 @@ sequenceDiagram
 		Macro->>Output: Close workbook
 	end
 
-	Macro->>Macro: Restore ScreenUpdating, Events, and Alerts
-	Macro->>Progress: Show completion briefly, then unload
-	Macro->>Mapping: Append final log and AutoFit columns once
-	Macro-->>User: Show completion message
+	alt Normal completion
+		Macro->>Macro: Restore captured Application settings
+		Macro->>Progress: Show completion briefly, then unload
+		Macro->>Mapping: Append final log and AutoFit columns once
+		Macro-->>User: Show completion message
+	else Unexpected VBA runtime error
+		Macro->>Mapping: Log error number, source, and description
+		Macro->>Macro: Restore captured Application settings and release references
+		Macro->>Progress: Unload progress form and display error
+		Note over Output: Leave any partial output workbook open for inspection
+	end
 	deactivate Macro
 ```
 
@@ -132,7 +145,7 @@ sequenceDiagram
 - สูตรต้นทางอ่านด้วย `FormulaR1C1`; การเขียนแบบช่วงหรือทีละเซลล์ยังคงเป็นสูตร ไม่ใช่การแปลงเป็นค่า
 - สูตรที่อ้างถึงชีทหรือ Table เช่น `Sale_Target` ต้องมีชีท/Table ชื่อนั้นใน Workbook ผลลัพธ์ และชื่อคอลัมน์ต้องตรงกัน
 - Reviewer loop คัดลอกและเติมชีทตามลำดับคอลัมน์ Mapping หากสูตรอ้างถึงชีท/Table ที่ยังไม่ได้คัดลอก อาจเกิด reference หรือ formula error ได้
-- การแปลง `(R)` เป็นค่าจะใช้ค่าผลลัพธ์ที่มีอยู่ในเวลานั้น แมโครตั้ง Calculation เป็น Manual และไม่ได้สั่ง Calculate ก่อนแปลง
+- Reviewer macro ตั้ง Calculation เป็น Manual แล้วสั่ง Calculate ทีละ worksheet ใน `ThisWorkbook` ก่อนอ่าน Mapping และคัดลอกชีท; การแปลง `(R)` เป็นค่าจึงใช้ผลคำนวณที่มี ณ เวลาคัดลอก
 
 ## Memory, Performance และ Error Handling
 
@@ -140,8 +153,9 @@ sequenceDiagram
 - ข้อมูล 20,000 แถวหลายชีทและการสร้างหลาย Reviewer ยังใช้หน่วยความจำสูงได้ ควรตรวจ peak memory และเวลารันจาก Log/Task Manager
 - สูตรถูกเขียนเป็น contiguous blocks ก่อน; หากล้มเหลวจะ fallback ทีละเซลล์ Log สูตรที่ยังเขียนไม่ได้ พร้อม Err.Number, address และสูตรตัวอย่าง
 - Log ถูกล้างตั้งแต่ A2:E เมื่อเริ่มงาน และ AutoFit คอลัมน์ครั้งเดียวหลัง Log สุดท้าย
-- `Application.Calculation` ถูกตั้งเป็น Manual แต่ Cleanup ปัจจุบันคืน ScreenUpdating, Events และ Alerts เท่านั้น ไม่คืน Calculation mode
-- Reviewer macro ไม่มี global error handler แบบเดียวกับ Cost Center หากเกิด Runtime Error ที่ไม่ถูกดัก อาจหยุดก่อนปิด Workbook/Form หรือคืนค่า Application
+- Reviewer macro จับค่าเดิมของ `ScreenUpdating`, `Calculation`, `EnableEvents` และ `DisplayAlerts` แล้วคืนค่าทั้งหมดเมื่อจบงานหรือเกิด runtime error; การคืน Calculation เป็น Automatic อาจทำให้ Excel คำนวณสูตรใหม่
+- Reviewer macro มี procedure-level error handler ซึ่งบันทึกและแจ้ง unexpected VBA runtime errors, คืนค่า Application settings และปิด progress form; workbook ผลลัพธ์ที่ยังไม่บันทึกจะคงเปิดไว้ตรวจสอบ
+- Handler นี้ไม่สามารถกู้คืน Excel จาก process crash, OS termination หรือการค้างภายในคำสั่ง Calculate แบบ synchronous
 
 ## แนวทางแก้ไขในอนาคต
 
