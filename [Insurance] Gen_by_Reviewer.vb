@@ -57,7 +57,10 @@ Sub genfile_ByReviewer_V11_WithLog()
     Dim arrMasterMapping As Variant
     Dim arrMasterData As Variant            ' อาร์เรย์สำหรับเก็บข้อมูลจากชีท Master (M)
     Dim arrCurrentSheetFinalData As Variant ' อาร์เรย์สำหรับเก็บข้อมูลสุดท้ายของชีทปัจจุบันก่อนทำการเขียนลงชีท
-    Dim arrTemplateFormulas As Variant      ' อาร์เรย์สำหรับเก็บสูตรจากชีทเทมเพลตดั้งเดิม
+    Dim arrCurrentSheetFormulaData As Variant
+    Dim sourceFormulaRow As Variant
+    Dim sourceMasterRow As Long
+    Dim cellFormula As String
 
     ' STREAMING_CHUNK:Initializing dictionary objects...
     ' ประกาศวัตถุ Dictionary สำหรับการค้นหาข้อมูล Master (M) ที่รวดเร็ว
@@ -359,6 +362,7 @@ Sub genfile_ByReviewer_V11_WithLog()
         ' --- [ดัชนี 8.1]: วนลูปตามชีทที่เลือกสำหรับ Reviewer ปัจจุบัน ---
         Dim selectedSheetCol As Long
         Dim tempCollectionForSheetData As Collection
+        Dim tempCollectionForSheetSourceRows As Collection
         Dim currentMasterDataCols As Long
 
         For Each currentReviewerName_str In dictReviewerFiles.Keys
@@ -392,6 +396,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                 Next pcMappingRow
                 If isSheetEnabledForReviewer Then
                     Set tempCollectionForSheetData = New Collection
+                    Set tempCollectionForSheetSourceRows = New Collection
                     currentMasterDataCols = 0
                     masterSourceSheetName = Trim(CStr(wsMasterMapping.Cells(2, selectedSheetCol).Value))
                     templateSheetName = Trim(CStr(wsMasterMapping.Cells(3, selectedSheetCol).Value))
@@ -489,14 +494,6 @@ Sub genfile_ByReviewer_V11_WithLog()
                         Set wsCopiedShape = Nothing
                         ' --- สิ้นสุด [ดัชนี 8.1.1] ---
 
-                        ' --- [ดัชนี 8.1.2]: ดึงสูตรมาจากชีท (M) ต้นฉบับ ---
-                        Dim maxColsInTemplateFormulas As Long
-                        maxColsInTemplateFormulas = wsOriginalTemplate.Cells(2, wsOriginalTemplate.Columns.Count).End(xlToLeft).Column
-                        If maxColsInTemplateFormulas = 0 Then maxColsInTemplateFormulas = 1
-                        arrTemplateFormulas = wsOriginalTemplate.Range("A2").Resize(1, maxColsInTemplateFormulas).FormulaR1C1
-                        Call WriteLog("DEBUG", "Formulas retrieved from source sheet '" & wsOriginalTemplate.Name & "'. Columns: " & maxColsInTemplateFormulas)
-                        ' --- สิ้นสุด [ดัชนี 8.1.2] ---
-
                         ' STREAMING_CHUNK:Processing data rows for the copied sheet...
                         ' --- [ดัชนี 8.1.3]: การประมวลผลข้อมูลสำหรับชีทที่สร้างขึ้นใหม่ ---
                         If dictAllMasterData.Exists(createdSheetName) Then ' ใช้ createdSheetName (เช่น "Sheet1 (M)") ในการค้นหา
@@ -541,6 +538,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                                                 If UBound(rowToAdd) >= 3 Then rowToAdd(3) = currentProfitCenterName
                                                 
                                                 tempCollectionForSheetData.Add rowToAdd
+                                                tempCollectionForSheetSourceRows.Add CLng(masterRowIndex)
                                                
                                             Next masterRowIndex
                                         Else
@@ -553,16 +551,23 @@ Sub genfile_ByReviewer_V11_WithLog()
                             Next pcMappingRow
 
                             If tempCollectionForSheetData.Count > 0 And currentMasterDataCols > 0 Then
-                                If maxColsInTemplateFormulas > 0 Then
-                                    arrTemplateFormulas = wsOriginalTemplate.Range("A2").Resize(tempCollectionForSheetData.Count, maxColsInTemplateFormulas).FormulaR1C1
-                                End If
-
                                 ReDim arrCurrentSheetFinalData(1 To tempCollectionForSheetData.Count, 1 To currentMasterDataCols)
+                                ReDim arrCurrentSheetFormulaData(1 To tempCollectionForSheetData.Count, 1 To currentMasterDataCols)
                                 dataRowCounter = 0
                                 For Each rowToAdd In tempCollectionForSheetData
                                     dataRowCounter = dataRowCounter + 1
                                     For k = 1 To Application.Min(UBound(rowToAdd), currentMasterDataCols)
                                         arrCurrentSheetFinalData(dataRowCounter, k) = rowToAdd(k)
+                                    Next k
+
+                                    ' Keep formulas aligned to the exact Master row selected for this PC.
+                                    sourceMasterRow = CLng(tempCollectionForSheetSourceRows(dataRowCounter)) + 1
+                                    sourceFormulaRow = wsMasterSource.Cells(sourceMasterRow, 1).Resize(1, currentMasterDataCols).FormulaR1C1
+                                    For k = 4 To currentMasterDataCols
+                                        cellFormula = CStr(sourceFormulaRow(1, k))
+                                        If Left$(cellFormula, 1) = "=" Then
+                                            arrCurrentSheetFormulaData(dataRowCounter, k) = cellFormula
+                                        End If
                                     Next k
                                 Next rowToAdd
 
@@ -571,9 +576,8 @@ Sub genfile_ByReviewer_V11_WithLog()
                                 Call RefreshProgressForm(frmProgress, StartTime)
                                 Call WriteLog("INFO", "Data values written to new sheet.", "Sheet Name / Rows", wsNewWorkbookSheet.Name & " / " & tempCollectionForSheetData.Count)
 
-                                If IsArray(arrTemplateFormulas) Then
+                                If IsArray(arrCurrentSheetFormulaData) Then
                                     Dim rIdx As Long
-                                    Dim cellFormula As String
                                     Dim formulaStartRow As Long
                                     Dim formulaRunLength As Long
                                     Dim formulaOffset As Long
@@ -592,15 +596,15 @@ Sub genfile_ByReviewer_V11_WithLog()
                                                 progressCheckCounter = 0
                                             End If
                                             cellFormula = ""
-                                            If rIdx <= UBound(arrTemplateFormulas, 1) And k <= UBound(arrTemplateFormulas, 2) Then
-                                                cellFormula = CStr(arrTemplateFormulas(rIdx, k))
+                                            If rIdx <= UBound(arrCurrentSheetFormulaData, 1) And k <= UBound(arrCurrentSheetFormulaData, 2) Then
+                                                cellFormula = CStr(arrCurrentSheetFormulaData(rIdx, k))
                                             End If
 
                                             If Left(cellFormula, 1) = "=" And Len(cellFormula) > 1 Then
                                                 formulaStartRow = rIdx
                                                 Do While rIdx <= tempCollectionForSheetData.Count
-                                                    If rIdx > UBound(arrTemplateFormulas, 1) Or k > UBound(arrTemplateFormulas, 2) Then Exit Do
-                                                    cellFormula = CStr(arrTemplateFormulas(rIdx, k))
+                                                    If rIdx > UBound(arrCurrentSheetFormulaData, 1) Or k > UBound(arrCurrentSheetFormulaData, 2) Then Exit Do
+                                                    cellFormula = CStr(arrCurrentSheetFormulaData(rIdx, k))
                                                     If Left(cellFormula, 1) <> "=" Or Len(cellFormula) <= 1 Then Exit Do
                                                     rIdx = rIdx + 1
                                                 Loop
@@ -608,7 +612,7 @@ Sub genfile_ByReviewer_V11_WithLog()
                                                 formulaRunLength = rIdx - formulaStartRow
                                                 ReDim formulaBlock(1 To formulaRunLength, 1 To 1)
                                                 For formulaOffset = 1 To formulaRunLength
-                                                    formulaBlock(formulaOffset, 1) = arrTemplateFormulas(formulaStartRow + formulaOffset - 1, k)
+                                                    formulaBlock(formulaOffset, 1) = arrCurrentSheetFormulaData(formulaStartRow + formulaOffset - 1, k)
                                                 Next formulaOffset
 
                                                 Set formulaRange = wsNewWorkbookSheet.Cells(formulaStartRow + 1, k).Resize(formulaRunLength, 1)
@@ -646,10 +650,11 @@ Sub genfile_ByReviewer_V11_WithLog()
                                             End If
                                         Loop
                                     Next k
-                                    Call WriteLog("INFO", "Formulas applied in contiguous blocks for formula cells only.", "Sheet Name", wsNewWorkbookSheet.Name)
+                                    Call WriteLog("INFO", "Source-row formulas applied in contiguous blocks.", "Sheet Name", wsNewWorkbookSheet.Name)
                                 End If
 
                                 Erase arrCurrentSheetFinalData
+                                Erase arrCurrentSheetFormulaData
                             Else
                                 Call WriteLog("INFO", "No data to write to sheet after filtering. Sheet: '" & wsNewWorkbookSheet.Name & "', Reviewer: '" & currentReviewerName_str & "'")
                             End If
@@ -946,8 +951,7 @@ CleanUp:
     If Not IsEmpty(arrMasterData) And IsArray(arrMasterData) Then Erase arrMasterData
     ' ตรวจสอบว่า arrCurrentSheetFinalData ถูกกำหนดค่าและไม่ว่างเปล่าก่อนล้างค่า
     If Not IsEmpty(arrCurrentSheetFinalData) And IsArray(arrCurrentSheetFinalData) Then Erase arrCurrentSheetFinalData
-    ' ตรวจสอบว่า arrTemplateFormulas ถูกกำหนดค่าและไม่ว่างเปล่าก่อนล้างค่า
-    If IsArray(arrTemplateFormulas) Then Erase arrTemplateFormulas
+    If Not IsEmpty(arrCurrentSheetFormulaData) And IsArray(arrCurrentSheetFormulaData) Then Erase arrCurrentSheetFormulaData
     Call WriteLog("INFO", "All array variables cleared.")
 
     endTime = Timer
